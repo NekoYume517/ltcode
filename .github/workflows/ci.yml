@@ -7,12 +7,13 @@ on:
     branches: [ main ]
 
 env:
-  # Pinned deliberately. The MoonBit compiler changes syntax between releases:
-  # 0.1.20261102 renamed `derive(...)` to the `#derive(...)` attribute and
-  # dropped `Double::to_float` / `UInt::reinterpret_as_float`. An unpinned
-  # install therefore turns a green build red with no code change. Pin it, and
-  # move the pin in a commit that can be bisected.
-  MOONBIT_VERSION: "0.1.20261102"
+  # The CDN only publishes `latest`; dated versions 403, so a literal version
+  # pin cannot be downloaded. What *can* be pinned is the syntax level this
+  # source targets: 0.1.20261102 introduced `#derive(...)`. The installer below
+  # takes `latest`, then hard-fails if that turns out to be *older* than the
+  # level the code is written against. That converts silent drift into a clear
+  # error instead of a mystery format-check failure.
+  MOONBIT_MIN_VERSION: "0.1.20261102"
 
 jobs:
   test:
@@ -20,18 +21,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MoonBit ${{ env.MOONBIT_VERSION }}
+      - name: Install MoonBit
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s "$MOONBIT_VERSION"
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> $GITHUB_PATH
 
-      # A pin that is not checked is not a pin. Fail loudly if the toolchain
-      # that actually ran is not the one requested.
-      - name: Verify toolchain
+      - name: Verify toolchain is at least ${{ env.MOONBIT_MIN_VERSION }}
         run: |
           moon version
-          moon version | grep -q "$MOONBIT_VERSION" \
-            || { echo "expected moon $MOONBIT_VERSION, got something else"; exit 1; }
+          got=$(moon version | head -n1 | awk '{print $2}')
+          echo "installed: $got  minimum: $MOONBIT_MIN_VERSION"
+          newest=$(printf '%s\n%s\n' "$MOONBIT_MIN_VERSION" "$got" | sort -V | tail -n1)
+          if [ "$newest" != "$got" ]; then
+            echo "::error::toolchain $got is older than the syntax level this repo targets ($MOONBIT_MIN_VERSION)"
+            exit 1
+          fi
 
       # Fresh runners start with an empty registry index. Without this,
       # dependency resolution fails with 'module was not found in the
