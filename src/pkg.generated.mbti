@@ -123,6 +123,7 @@ pub fn validate_distribution(Distribution) -> Result[Unit, LtError]
 pub let version : String
 
 // Errors
+#derive(Eq, @debug.Debug)
 pub(all) suberror LtError {
   EmptySource
   SourceTooLarge(Int32, Int32)
@@ -131,9 +132,10 @@ pub(all) suberror LtError {
   DistributionNotNormalized(Double)
   TruncatedSymbol(Int32, Int32)
   CorruptionDetected(UInt64, UInt64)
-} derive(Eq, @debug.Debug)
+}
 
 // Types and methods
+#derive(@debug.Debug)
 pub(all) struct Container {
   k : Int32
   seed : UInt64
@@ -143,15 +145,16 @@ pub(all) struct Container {
   c : Double
   delta : Double
   symbols : Array[ReceivedSymbol]
-} derive(@debug.Debug)
+}
 
+#derive(@debug.Debug)
 pub(all) struct CurvePoint {
   overhead : Double
   received : Int32
   successes : Int32
   trials : Int32
   rate : Double
-} derive(@debug.Debug)
+}
 
 pub(all) enum DecodeResult {
   Complete(Array[Bytes])
@@ -161,13 +164,14 @@ pub fn DecodeResult::is_complete(Self) -> Bool
 pub fn DecodeResult::missing_count(Self) -> Int32
 pub fn DecodeResult::missing_indices(Self) -> Array[Int32]
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecodeStats {
   received : Int32
   subset_slots : Int32
   resolved : Int32
   xor_bytes : Int32
   inconsistent : Int32
-} derive(Eq, @debug.Debug)
+}
 
 pub(all) struct Distribution {
   k : Int32
@@ -196,10 +200,11 @@ pub fn Ltrng::next_below(Self, Int32) -> Int32
 pub fn Ltrng::next_double(Self) -> Double
 pub fn Ltrng::next_u64(Self) -> UInt64
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ReceivedSymbol {
   index : Int32
   data : Bytes
-} derive(Eq, @debug.Debug)
+}
 
 pub(all) struct SourceBlock {
   k : Int32
@@ -209,18 +214,20 @@ pub(all) struct SourceBlock {
 pub fn SourceBlock::from_bytes(Bytes, Int32) -> Result[Self, LtError]
 pub fn SourceBlock::new(Array[Bytes]) -> Result[Self, LtError]
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Symbol {
   index : Int32
   data : Bytes
-} derive(Eq, @debug.Debug)
+}
 
+#derive(@debug.Debug)
 pub(all) struct TrialOutcome {
   seed : UInt64
   received : Int32
   success : Bool
   missing : Int32
   stats : DecodeStats
-} derive(@debug.Debug)
+}
 
 // Type aliases
 
