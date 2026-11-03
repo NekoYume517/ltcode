@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "NekoYume517/ltcode/cmd/ltcode"
+
+// Values
+pub fn join_ints(Array[Int32]) -> String
+
+pub fn parse_args(Array[String]) -> Args
+
+pub fn parse_overheads(String) -> Array[Double]
+
+// Errors
+
+// Types and methods
+pub struct Args {
+  map : Map[String, String]
+}
+pub fn Args::double(Self, String) -> Double?
+pub fn Args::int(Self, String) -> Int32?
+pub fn Args::str(Self, String) -> String?
+pub fn Args::uint64(Self, String) -> UInt64?
+
+// Type aliases
+
+// Traits

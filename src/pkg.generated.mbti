@@ -1,0 +1,227 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "NekoYume517/ltcode/src"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub let container_magic : FixedArray[Byte]
+
+pub let container_version : Int32
+
+pub fn decode(UInt64, Int32, Int32, Array[ReceivedSymbol]) -> DecodeResult raise LtError
+
+pub fn decode_full(UInt64, Int32, Int32, Array[ReceivedSymbol], Double, Double) -> DecodeResult raise LtError
+
+pub fn decode_success_rate(Int32, Double, Int32, UInt64, Int32, Double, Double) -> CurvePoint raise LtError
+
+pub fn decode_verified(Container) -> DecodeResult raise LtError
+
+pub fn decode_with_stats(UInt64, Int32, Int32, Array[ReceivedSymbol], Double, Double) -> (DecodeResult, DecodeStats) raise LtError
+
+pub fn default_c() -> Double
+
+pub fn default_delta() -> Double
+
+pub fn default_seed() -> UInt64
+
+pub fn dequantize_param(Int32) -> Double
+
+pub fn distribute_from_array(Int32, Array[Double]) -> Distribution
+
+pub fn distribution_comparison(Int32, Double, Int32, UInt64, Int32) -> Array[(String, CurvePoint)] raise LtError
+
+pub fn encode_symbol(UInt64, Int32, Array[Bytes]) -> Bytes raise LtError
+
+pub fn error_text(LtError) -> String
+
+pub fn evaluate(Int32, Array[Double], Int32, UInt64, Int32, Double, Double) -> Array[CurvePoint] raise LtError
+
+pub fn fixed_degree_success_rate(Int32, Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
+
+pub fn fixed_distribution(Int32, Int32) -> Distribution
+
+pub fn floyd_subset(Ltrng, Int32, Int32) -> Array[Int32]
+
+pub fn format_curve_point(CurvePoint) -> String
+
+pub fn format_fixed(Double, Int32) -> String
+
+pub fn format_trial(TrialOutcome) -> String
+
+pub fn gf256_add(Int32, Int32) -> Int32
+
+pub let gf256_generator : Int32
+
+pub fn gf256_inv(Int32) -> Int32?
+
+pub fn gf256_mul(Int32, Int32) -> Int32
+
+pub fn gf256_mul_peasant(Int32, Int32) -> Int32
+
+pub fn gf256_pow(Int32, Int32) -> Int32
+
+pub fn header_len() -> Int32
+
+pub fn ideal_rho(Int32, Int32) -> Double
+
+pub fn ideal_soliton(Int32) -> Distribution
+
+pub fn ideal_success_rate(Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
+
+pub fn map_below(UInt64, Int32) -> Int32?
+
+pub fn max_source_symbols() -> Int32
+
+pub fn overhead_ratio(Int32, Int32) -> Double
+
+pub fn pack_container(SourceBlock, UInt64, Bytes, Double, Double, Array[Symbol]) -> Bytes
+
+pub fn payload_hash(Bytes) -> UInt64
+
+pub fn quantize_param(Double) -> Int32
+
+pub fn random_sources(UInt64, Int32, Int32) -> Array[Bytes]
+
+pub fn reassemble(Array[Bytes], Int32) -> Bytes
+
+pub fn received_count(Int32, Double) -> Int32
+
+pub fn rejection_threshold(Int32) -> UInt64
+
+pub fn robust_beta(Int32, Double, Double) -> Double
+
+pub fn robust_distribution(Int32, Double, Double) -> Distribution
+
+pub fn robust_kr_index(Int32, Double, Double) -> Int32
+
+pub fn robust_r(Int32, Double, Double) -> Double
+
+pub fn robust_soliton_checked(Int32, Double, Double) -> Result[Distribution, LtError]
+
+pub fn robust_tau(Int32, Int32, Double, Double) -> Double
+
+pub fn round3(Double) -> Double
+
+pub fn run_trial(Int32, Double, UInt64, Int32, Double, Double) -> TrialOutcome raise LtError
+
+pub fn run_with_distribution(Distribution, Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
+
+pub fn sample_degree(Ltrng, Int32, Double, Double) -> Int32
+
+pub fn splitmix64(UInt64) -> UInt64
+
+pub fn subset_for(UInt64, Int32, Int32, Distribution) -> Array[Int32]
+
+pub fn symbol_rng(UInt64, Int32) -> Ltrng
+
+pub fn unpack_container(Bytes) -> Container raise LtError
+
+pub fn validate_distribution(Distribution) -> Result[Unit, LtError]
+
+pub let version : String
+
+// Errors
+pub(all) suberror LtError {
+  EmptySource
+  SourceTooLarge(Int32, Int32)
+  SymbolLengthMismatch(Int32, Int32)
+  InvalidDegree(Int32, Int32)
+  DistributionNotNormalized(Double)
+  TruncatedSymbol(Int32, Int32)
+  CorruptionDetected(UInt64, UInt64)
+} derive(Eq, @debug.Debug)
+
+// Types and methods
+pub(all) struct Container {
+  k : Int32
+  seed : UInt64
+  symbol_len : Int32
+  payload_len : Int32
+  payload_hash : UInt64
+  c : Double
+  delta : Double
+  symbols : Array[ReceivedSymbol]
+} derive(@debug.Debug)
+
+pub(all) struct CurvePoint {
+  overhead : Double
+  received : Int32
+  successes : Int32
+  trials : Int32
+  rate : Double
+} derive(@debug.Debug)
+
+pub(all) enum DecodeResult {
+  Complete(Array[Bytes])
+  Incomplete(Array[Bytes?], Array[Int32])
+}
+pub fn DecodeResult::is_complete(Self) -> Bool
+pub fn DecodeResult::missing_count(Self) -> Int32
+pub fn DecodeResult::missing_indices(Self) -> Array[Int32]
+
+pub(all) struct DecodeStats {
+  received : Int32
+  subset_slots : Int32
+  resolved : Int32
+  xor_bytes : Int32
+  inconsistent : Int32
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Distribution {
+  k : Int32
+  pmf : FixedArray[Double]
+  cdf : FixedArray[Double]
+}
+pub fn Distribution::cdf_at(Self, Int32) -> Double
+pub fn Distribution::expected_degree(Self) -> Double
+pub fn Distribution::pdf(Self, Int32) -> Double
+pub fn Distribution::sample(Self, Ltrng) -> Int32
+
+pub(all) struct Encoder {
+  seed : UInt64
+  block : SourceBlock
+  dist : Distribution
+}
+pub fn Encoder::new(SourceBlock, UInt64, Double, Double) -> Result[Self, LtError]
+pub fn Encoder::symbol(Self, Int32) -> Symbol
+pub fn Encoder::symbols(Self, Int32, Int32) -> Array[Symbol]
+
+pub struct Ltrng {
+  // private fields
+}
+pub fn Ltrng::new(UInt64) -> Self
+pub fn Ltrng::next_below(Self, Int32) -> Int32
+pub fn Ltrng::next_double(Self) -> Double
+pub fn Ltrng::next_u64(Self) -> UInt64
+
+pub(all) struct ReceivedSymbol {
+  index : Int32
+  data : Bytes
+} derive(Eq, @debug.Debug)
+
+pub(all) struct SourceBlock {
+  k : Int32
+  symbol_len : Int32
+  sources : Array[Bytes]
+}
+pub fn SourceBlock::from_bytes(Bytes, Int32) -> Result[Self, LtError]
+pub fn SourceBlock::new(Array[Bytes]) -> Result[Self, LtError]
+
+pub(all) struct Symbol {
+  index : Int32
+  data : Bytes
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TrialOutcome {
+  seed : UInt64
+  received : Int32
+  success : Bool
+  missing : Int32
+  stats : DecodeStats
+} derive(@debug.Debug)
+
+// Type aliases
+
+// Traits
