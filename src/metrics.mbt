@@ -14,6 +14,7 @@
 
 ///|
 /// 一次试验的结果。
+#derive(Debug)
 pub(all) struct TrialOutcome {
   /// 本次试验的种子（可复现）
   seed : UInt64
@@ -25,7 +26,7 @@ pub(all) struct TrialOutcome {
   missing : Int32
   /// 解码操作计数
   stats : DecodeStats
-} derive(Debug)
+}
 
 ///|
 /// 开销比：`received / K`。
@@ -39,6 +40,7 @@ pub fn overhead_ratio(k : Int32, received : Int32) -> Double {
 
 ///|
 /// 一条曲线上的一个点。
+#derive(Debug)
 pub(all) struct CurvePoint {
   /// 目标开销
   overhead : Double
@@ -50,7 +52,7 @@ pub(all) struct CurvePoint {
   trials : Int32
   /// 成功率，3 位小数
   rate : Double
-} derive(Debug)
+}
 
 ///|
 /// `floor(K * overhead)`，至少 0。

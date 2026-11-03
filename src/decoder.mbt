@@ -83,6 +83,7 @@ pub fn DecodeResult::missing_count(self : DecodeResult) -> Int32 {
 ///|
 /// 解码统计。**操作计数而不是时间**：CI 上墙钟不稳，而且用时间无法区分
 /// 「渐进复杂度错了」与「常数因子大了」。
+#derive(Eq, Debug)
 pub(all) struct DecodeStats {
   /// 收到的符号数
   received : Int32
@@ -96,7 +97,7 @@ pub(all) struct DecodeStats {
   /// 正常情况下恒为 0（XOR 是自洽的）；非 0 说明收到的符号之间不一致
   /// （数据被篡改或 index 与内容错配）。CLI 在非 0 时给出警告。
   inconsistent : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 /// 完整解码：给定 `(seed, K, symbol_len, received)`。

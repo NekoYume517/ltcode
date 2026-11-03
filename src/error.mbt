@@ -4,6 +4,7 @@
 /// 设计原则：每一个「看起来可以猜」的失败都变成显式错误，而不是返回一个
 /// 看起来完整的错误结果。解码失败不在错误里表达 —— 那是 `DecodeResult::Incomplete`，
 /// 因为「数据不足」是正常业务状态，不是调用方的编程错误。
+#derive(Eq, Debug)
 pub(all) suberror LtError {
   /// 源符号数为 0（没有任何可编码的东西）
   EmptySource
@@ -23,7 +24,7 @@ pub(all) suberror LtError {
   /// 但哈希不符说明收到的符号本身是坏的（被改过、或混入了另一批），
   /// 再要多少也没用。理由与实测见 `docs/implementation.md` §5b。
   CorruptionDetected(UInt64, UInt64)
-} derive(Eq, Debug)
+}
 
 ///|
 /// 稳定的、人类可读的错误文本。

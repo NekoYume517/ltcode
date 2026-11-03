@@ -210,6 +210,7 @@ pub fn pack_container(
 
 ///|
 /// 一个解包出来的容器的全部字段。
+#derive(Debug)
 pub(all) struct Container {
   k : Int32
   seed : UInt64
@@ -219,7 +220,7 @@ pub(all) struct Container {
   c : Double
   delta : Double
   symbols : Array[ReceivedSymbol]
-} derive(Debug)
+}
 
 ///|
 /// 反序列化。任何结构性问题都报明确错误（不猜）。

@@ -143,14 +143,16 @@ fn xor_into(dst : FixedArray[Byte], src : Bytes) -> Unit {
 /// 因此任何一个编码符号都能独立重新生成，不依赖「之前生成过哪些」。
 /// 这是 rateless 性质在实现层面的落点：接收方丢掉任意一段，剩下的仍可用，
 /// 补发也只需给新的 index。
+#derive(Eq, Debug)
 pub(all) struct Symbol {
   index : Int32
   data : Bytes
-} derive(Eq, Debug)
+}
 
 ///|
 /// 一个收到的符号。解码器需要知道它的 index 才能重建子集。
+#derive(Eq, Debug)
 pub(all) struct ReceivedSymbol {
   index : Int32
   data : Bytes
-} derive(Eq, Debug)
+}

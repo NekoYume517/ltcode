@@ -6,19 +6,32 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  # Pinned deliberately. The MoonBit compiler changes syntax between releases:
+  # 0.1.20261102 renamed `derive(...)` to the `#derive(...)` attribute and
+  # dropped `Double::to_float` / `UInt::reinterpret_as_float`. An unpinned
+  # install therefore turns a green build red with no code change. Pin it, and
+  # move the pin in a commit that can be bisected.
+  MOONBIT_VERSION: "0.1.20261102"
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MoonBit
+      - name: Install MoonBit ${{ env.MOONBIT_VERSION }}
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s "$MOONBIT_VERSION"
           echo "$HOME/.moon/bin" >> $GITHUB_PATH
 
+      # A pin that is not checked is not a pin. Fail loudly if the toolchain
+      # that actually ran is not the one requested.
       - name: Verify toolchain
-        run: moon version
+        run: |
+          moon version
+          moon version | grep -q "$MOONBIT_VERSION" \
+            || { echo "expected moon $MOONBIT_VERSION, got something else"; exit 1; }
 
       # Fresh runners start with an empty registry index. Without this,
       # dependency resolution fails with 'module was not found in the
@@ -27,8 +40,7 @@ jobs:
         run: moon update
 
       # Errors must be zero. Warnings are allowed: the codebase still carries
-      # deprecation notices from impl ... with fn name(self) and from
-      # derive(Eq) promotion, which are style-level and not defects.
+      # style-level notices that are not defects.
       - name: Type check
         run: moon check
 
