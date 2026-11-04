@@ -296,12 +296,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 96 tests, all pass
+moon test             # 97 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（96 条，按 `^test "` 计数）：
+测试分布（97 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -314,7 +314,7 @@ moon build --target wasm
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
 | `verified_test.mbt` | 3 | 完好容器通过校验、篡改必 raise `CorruptionDetected` |
 | `symbol_test.mbt` | 3 | `reassemble` 逐字节还原、按 `payload_len` 截零、空输入不 panic |
-| `cli_test.mbt` | 13 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
+| `cli_test.mbt` | 14 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，
