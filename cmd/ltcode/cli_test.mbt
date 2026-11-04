@@ -273,6 +273,24 @@ test "cli: parse_overheads (lenient) still drops, and is not the curve entry" {
 }
 
 ///|
+/// **LT-4**：`--count 0` 的产出侧提示。
+///
+/// README 与 API.md 都逐字引用了这句 `note:`，所以它必须真的存在、且只在
+/// `count == 0` 时出现 —— 否则文档承诺了一条命令不会打印的话。
+/// 退出码本身测不了（`@sys.exit` 会结束进程），因此这里只测"决定提示与否
+/// 的那个条件"，与 CLI 里的 `if count == 0` 一一对应。
+test "cli: LT-4 the symbol-free note is emitted exactly for count == 0" {
+  assert_eq(@ltcode.encode_note(0), @ltcode.symbol_free_note())
+  // 文档逐字引用的那句话，一个字都不能漂
+  assert_eq(
+    @ltcode.symbol_free_note(),
+    "note: --count 0 wrote a symbol-free container; decode will always report INCOMPLETE",
+  )
+  assert_eq(@ltcode.encode_note(1), "")
+  assert_eq(@ltcode.encode_note(300), "")
+}
+
+///|
 test "cli: join_ints renders comma-separated without trailing comma" {
   assert_eq(@ltcode.join_ints([0, 2, 5]), "0,2,5")
   assert_eq(@ltcode.join_ints([7]), "7")

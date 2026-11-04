@@ -70,6 +70,27 @@ fn opt_seed(args : Args) -> UInt64? {
 }
 
 ///|
+/// `--count 0` 产出无符号容器时打印的那句提示。
+///
+/// 抽成函数而非常量，是为了让 README / API.md 逐字引用的那句话有**唯一**
+/// 定义处：文档与实现引同一份文本，改一处就得改另一处，不存在"文档说会
+/// 打印、代码其实没打"的位置。
+pub fn symbol_free_note() -> String {
+  "note: --count 0 wrote a symbol-free container; decode will always report INCOMPLETE"
+}
+
+///|
+/// 产出侧提示：`count == 0` 才有话说，其余情况是空串（调用方据此决定是否
+/// 打印）。返回空串而不是 `Option`，是因为调用点只想 `println` 一次。
+pub fn encode_note(count : Int32) -> String {
+  if count == 0 {
+    symbol_free_note()
+  } else {
+    ""
+  }
+}
+
+///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
 fn cmd_encode(args : Args) -> Unit {
   let input = match args.str("input") {
@@ -161,6 +182,16 @@ fn cmd_encode(args : Args) -> Unit {
     "encoded \{data.length()} bytes -> K=\{k} symbol_len=\{block.symbol_len} symbols=\{count} seed=\{seed}",
   )
   println("out: \{out_path} (\{packed.length()} bytes)")
+  // `--count 0` 的语义（LT-4）：容器结构完好但一个符号都没有。
+  // 这种容器**永远**解不出来，所以产出这一侧必须说清楚，而不是让调用方
+  // 拿到一个"encode 成功、decode 永远 INCOMPLETE"的文件回去猜。
+  // 不改成 exit 2 的理由见 README「`--count 0` 的语义」：0 是良定义的下界
+  // （"先建头部、符号之后再补"），拒绝它会把可表达的请求变成不可表达；
+  // 该给的警告在产出侧给足就够了。
+  let note = encode_note(count)
+  if !note.is_empty() {
+    println(note)
+  }
   exit_ok()
 }
 
