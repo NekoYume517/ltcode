@@ -2,6 +2,8 @@
 package "NekoYume517/ltcode/cmd/ltcode"
 
 // Values
+pub fn encode_note(Int32) -> String
+
 pub fn join_ints(Array[Int32]) -> String
 
 pub fn num_error(String, String, String) -> String
@@ -15,6 +17,8 @@ pub fn parse_overheads(String) -> Array[Double]
 pub fn parse_overheads_strict(String) -> Result[Array[Double], String]
 
 pub fn parse_seed_token(String) -> UInt64?
+
+pub fn symbol_free_note() -> String
 
 // Errors
 
