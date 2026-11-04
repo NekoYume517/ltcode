@@ -111,7 +111,6 @@ pub fn SourceBlock::from_bytes(
 /// 把 K 个符号接回一段字节，并截到最后 `payload_len` 字节
 /// （去掉 `from_bytes` 补的零）。
 pub fn reassemble(sources : Array[Bytes], payload_len : Int32) -> Bytes {
-  let sb = StringBuilder()
   let out : Array[Byte] = []
   for s in sources {
     for i = 0; i < s.length(); i = i + 1 {
@@ -120,7 +119,6 @@ pub fn reassemble(sources : Array[Bytes], payload_len : Int32) -> Bytes {
       }
     }
   }
-  let _ = sb
   Bytes::from_array(out)
 }
 
