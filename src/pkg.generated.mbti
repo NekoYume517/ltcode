@@ -131,6 +131,8 @@ pub(all) suberror LtError {
   InvalidDegree(Int32, Int32)
   DistributionNotNormalized(Double)
   TruncatedSymbol(Int32, Int32)
+  BadMagic
+  UnsupportedVersion(Int32, Int32)
   CorruptionDetected(UInt64, UInt64)
 }
 

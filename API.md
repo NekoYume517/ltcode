@@ -309,6 +309,10 @@ pub(all) suberror LtError {
   InvalidDegree(Int, Int)
   DistributionNotNormalized(Double)
   TruncatedSymbol(Int, Int)
+  /// 魔数不是 "LTC2" —— 不是截断，是"这根本不是 ltcode 文件"
+  BadMagic
+  /// 版本号本构建不支持（文件里的版本, 本构建支持的版本）
+  UnsupportedVersion(Int, Int)
   /// 解码“完成”但载荷哈希不符（实际, 期望）。**不能**降级为 Incomplete：
   /// 数据不够可以再要符号；哈希不符说明数据本身坏了，再要也没用。
   CorruptionDetected(UInt64, UInt64)
@@ -318,6 +322,23 @@ pub fn error_text(e : LtError) -> String
 ```
 
 `error_text` 措辞固定（有测试锁定），脚本可以按文本匹配。
+
+`BadMagic` / `UnsupportedVersion` 的存在理由：容器"这是什么东西"的两个
+判据必须与"数据被截断"分开。
+
+| 情况 | 变体 | `error_text` | CLI 实际输出 |
+|---|---|---|---|
+| 文件短于头部 / 符号体不全 | `TruncatedSymbol` | `truncated symbol: got N bytes, expected M` | 同左 |
+| 魔数不是 `LTC2` | `BadMagic` | `bad magic` | `not a ltcode container: bad magic` |
+| 版本号本构建不支持 | `UnsupportedVersion(found, supported)` | `unsupported container version F, this build supports S` | 同左 |
+
+三者对调用方的**动作指引**不同：截断 → 重传这批数据；魔数不符 → 换一个
+正确的文件；版本不符 → 换版本或升级本构建。旧实现把前两者都并进
+`TruncatedSymbol`，把版本不符并进 `SourceTooLarge`（于是输出
+"source too large: K=3 exceeds the limit of 2"，一个版本号被当成源符号数）。
+
+`BadMagic` 的文本**不带** `not a ltcode container:` 前缀：`cmd_decode` 已经
+加了那一段，重复会让实际输出变成两个前缀叠在一起。
 
 退出码映射：`CorruptionDetected` 走 **3**（输入错误），不是 **1**。
 理由：退出码 1 的语义是“还差几个符号，再给我一些就能解”（调用方的正常

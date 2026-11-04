@@ -228,17 +228,17 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   if data.length() < header_len() {
     raise LtError::TruncatedSymbol(data.length(), header_len())
   }
-  // 魔数
+  // 魔数：不是 "LTC2" 说明这**不是** ltcode 容器，与"被截断"是两件事
   for i = 0; i < 4; i = i + 1 {
     if data[i] != container_magic[i] {
-      raise LtError::TruncatedSymbol(data.length(), header_len())
+      raise LtError::BadMagic
     }
   }
   let r = Reader::{ data, pos: 4, }
   let version = r.byte()
   if version != container_version {
-    // 版本不符：明确报错而不是尽力解析
-    raise LtError::SourceTooLarge(version, container_version)
+    // 版本不符：明确报错而不是尽力解析，也不借用无关的错误变体
+    raise LtError::UnsupportedVersion(version, container_version)
   }
   let c = dequantize_param(r.byte())
   let delta = dequantize_param(r.byte())

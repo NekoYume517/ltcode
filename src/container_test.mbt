@@ -168,7 +168,13 @@ test "container: truncated input raises, never invents bytes" {
 }
 
 ///|
-test "container: bad magic is rejected" {
+/// **LT-2**：魔数不符报 `BadMagic`，不是 `TruncatedSymbol`。
+///
+/// 旧实现 raise `TruncatedSymbol(data.length(), header_len())`，CLI 于是把
+/// "这根本不是 ltcode 文件"说成"文件被截断了" —— 调用方会去重传一个坏
+/// 文件，而不是换一个正确的文件。**这条断言是行为变更**：它原本锁定
+/// `TruncatedSymbol`，那是被 LT-2 判定为错位的语义。
+test "container: bad magic is rejected with BadMagic" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02", }]
@@ -179,13 +185,19 @@ test "container: bad magic is rejected" {
     let _ = unpack_container(Bytes::from_array(arr))
     abort("expected magic rejection")
   } catch {
-    TruncatedSymbol(_, _) => ()
-    _ => abort("wrong error for bad magic")
+    BadMagic => ()
+    e => abort("wrong error for bad magic: \{error_text(e)}")
   }
 }
 
 ///|
-test "container: wrong version is rejected rather than guessed" {
+/// **LT-2**：版本不符报 `UnsupportedVersion(文件版本, 本构建版本)`，不借用
+/// `SourceTooLarge`。
+///
+/// 旧实现 raise `SourceTooLarge(version, container_version)`，`error_text`
+/// 于是输出 "source too large: K=3 exceeds the limit of 2" —— 一个版本号
+/// 被当成源符号数报了出来。**这条断言也是行为变更**。
+test "container: wrong version is rejected with UnsupportedVersion" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02", }]
@@ -196,12 +208,33 @@ test "container: wrong version is rejected rather than guessed" {
     let _ = unpack_container(Bytes::from_array(arr))
     abort("expected version rejection")
   } catch {
-    SourceTooLarge(found, expected) => {
+    UnsupportedVersion(found, expected) => {
       inspect(found, content="\{container_version + 1}")
       inspect(expected, content="\{container_version}")
     }
-    _ => abort("wrong error for version mismatch")
+    e => abort("wrong error for version mismatch: \{error_text(e)}")
   }
+}
+
+///|
+/// **LT-2**：两个新变体的人读文本必须能当场分辨"不是容器"与"版本不对"。
+///
+/// 措辞固定（脚本可按文本匹配），因此这里逐字锁定。
+test "container: LT-2 error_text wording distinguishes magic from version" {
+  // CLI 的 `cmd_decode` 已经带 "not a ltcode container: " 前缀，因此这里
+  // 只给 "bad magic" —— 否则实际输出会变成
+  // "not a ltcode container: not a ltcode container: bad magic"。
+  assert_eq(error_text(BadMagic), "bad magic")
+  assert_eq(
+    error_text(UnsupportedVersion(3, 2)),
+    "unsupported container version 3, this build supports 2",
+  )
+  // 两条措辞不能互相污染，也不能落回旧的 "source too large"
+  assert_true(error_text(BadMagic) != error_text(TruncatedSymbol(64, 43)))
+  assert_true(!error_text(BadMagic).contains("truncated"))
+  assert_true(
+    !error_text(UnsupportedVersion(3, 2)).contains("source too large"),
+  )
 }
 
 ///|

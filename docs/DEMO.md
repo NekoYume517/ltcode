@@ -149,9 +149,15 @@ ok exit code = 0
 
 ```powershell
 $ moon run cmd/ltcode -- decode --input examples/payload.bin
-ltcode: not a ltcode container: truncated symbol: got 4000 bytes, expected 35
+ltcode: not a ltcode container: bad magic
 # exit 3
 ```
+
+> **这条输出变过（LT-2）**。旧版这里报的是
+> `not a ltcode container: truncated symbol: got 4000 bytes, expected 35`
+> —— 明明是"这不是 ltcode 文件"，却借用了"符号被截断"的措辞，会让调用方
+> 去重传一个坏文件，而不是换一个正确的文件。现在魔数不符报 `BadMagic`，
+> 版本不符报 `UnsupportedVersion`（见下一节）。
 
 ## 5. 成功率：K=1000 的完整曲线
 

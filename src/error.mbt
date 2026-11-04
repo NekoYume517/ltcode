@@ -18,6 +18,10 @@ pub(all) suberror LtError {
   DistributionNotNormalized(Double)
   /// 收到符号长度与声明不符（实际长度, 声明长度）
   TruncatedSymbol(Int32, Int32)
+  /// 容器的魔数不是 "LTC2" —— **不是**截断，是"这根本不是 ltcode 文件"。
+  BadMagic
+  /// 容器版本号本构建不支持（文件里的版本, 本构建支持的版本）
+  UnsupportedVersion(Int32, Int32)
   /// 解码"完成"但重算的载荷哈希与原哈希不符（实际, 期望）。
   ///
   /// 这是**唯一一个不能返回 `Incomplete` 的失败**：数据不够可以再要符号，
@@ -46,6 +50,9 @@ pub fn error_text(e : LtError) -> String {
       "degree distribution is not normalized: sum=\{sum} (tolerance 1e-12)"
     TruncatedSymbol(actual, wanted) =>
       "truncated symbol: got \{actual} bytes, expected \{wanted}"
+    BadMagic => "bad magic"
+    UnsupportedVersion(found, supported) =>
+      "unsupported container version \{found}, this build supports \{supported}"
     CorruptionDetected(actual, expected) =>
       "payload checksum mismatch: got 0x\{actual.to_string(radix=16)}, expected 0x\{expected.to_string(radix=16)}; the received symbols are corrupted or mixed from another encoding"
   }
