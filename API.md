@@ -370,3 +370,18 @@ pub(all) enum ArgNum[T] {
 > 前者会替调用方推断进制（`parse_int("0x10")` = 16），后者的
 > `parse_int64("abc", base=16)` 合法返回 2748。参数层不能猜 ——
 > 一个 token 的进制只能由它自己用 `0x` 前缀声明。
+
+### `--overheads` 的列表语义
+
+`parse_overheads_strict(spec) -> Result[Array[Double], String]` 是 `curve`
+的入口，**任何一项非法都让整条命令失败**（exit 2，报错回显原始片段）：
+
+```
+ltcode: --overheads 'abc' is not a positive number
+```
+
+旧实现（`parse_overheads`，仍然保留）会静默丢弃非法项，于是
+`--overheads 1.0,abc,1.5` 只跑两行、exit 0 —— 用户以为曲线覆盖三个点，
+实际只有两个。度量工具悄悄缩小自己的工作范围比报错更糟，所以子命令
+一律走严格入口。空段（`1.0,,1.5`）、非正数（`0` / `-1`）、`nan` / `inf`
+同样被拒绝。

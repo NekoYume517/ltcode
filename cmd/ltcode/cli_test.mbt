@@ -209,6 +209,70 @@ test "cli: parse_overheads splits, trims, drops non-positive and garbage" {
 }
 
 ///|
+/// **LT-3 回归（红）**：非法项必须被**拒绝**，不是被丢掉。
+///
+/// 旧行为：`--overheads 1.0,abc,1.5` 只跑 1.00 与 1.50 两行、exit 0、
+/// 无警告 —— 用户以为曲线覆盖了三个点，实际只有两个。
+/// 度量工具悄悄缩小自己的工作范围，比报错更糟。
+test "cli: LT-3 parse_overheads rejects garbage instead of dropping it" {
+  // 正常值仍然解析
+  let ok = @ltcode.parse_overheads_strict("1.0,1.1,1.2")
+  match ok {
+    Ok(a) => {
+      inspect(a.length(), content="3")
+      let d = a[2] - 1.2
+      assert_true(d.abs() < 0.000000000001)
+    }
+    Err(_) => abort("1.0,1.1,1.2 should parse")
+  }
+  // 空白被 trim
+  match @ltcode.parse_overheads_strict(" 1.5 , 2.0 ") {
+    Ok(b) => inspect(b.length(), content="2")
+    Err(_) => abort("spaced list should parse")
+  }
+  // 垃圾：整条拒绝，并带回原始 token
+  match @ltcode.parse_overheads_strict("1.0,abc,1.5") {
+    Ok(_) => abort("garbage item must not be dropped silently")
+    Err(tok) => inspect(tok, content="abc")
+  }
+  // 非正数与 0 同样是"不是正数"，同样拒绝
+  match @ltcode.parse_overheads_strict("1.0,-1,1.5") {
+    Ok(_) => abort("negative overhead must be rejected")
+    Err(tok) => inspect(tok, content="-1")
+  }
+  match @ltcode.parse_overheads_strict("1.0,0,1.5") {
+    Ok(_) => abort("zero overhead must be rejected")
+    Err(tok) => inspect(tok, content="0")
+  }
+  // nan / inf 也不是正数
+  match @ltcode.parse_overheads_strict("1.0,nan") {
+    Ok(_) => abort("nan must be rejected")
+    Err(tok) => inspect(tok, content="nan")
+  }
+  // 空段（多余逗号）不是"省略"，是错
+  match @ltcode.parse_overheads_strict("1.0,,1.5") {
+    Ok(_) => abort("empty item must be rejected")
+    Err(tok) => inspect(tok, content="(empty)")
+  }
+  // 空串给空列表（子命令随后报 "must list at least one"）
+  match @ltcode.parse_overheads_strict("") {
+    Ok(a) => inspect(a.length(), content="0")
+    Err(_) => abort("empty spec is empty, not invalid")
+  }
+}
+
+///|
+/// `parse_overheads` 的宽松版本仍保留"丢弃"语义，但**子命令不用它**。
+///
+/// 保留理由是它对"尽力而为"的输入清洗仍然有用；这条测试只是把
+/// 两个函数的区别固定住，防止有人把 `cmd_curve` 改回宽松入口。
+test "cli: parse_overheads (lenient) still drops, and is not the curve entry" {
+  let c = @ltcode.parse_overheads("1.0,abc,-1,0,1.5")
+  inspect(c.length(), content="2")
+  inspect(@ltcode.parse_overheads("").length(), content="0")
+}
+
+///|
 test "cli: join_ints renders comma-separated without trailing comma" {
   assert_eq(@ltcode.join_ints([0, 2, 5]), "0,2,5")
   assert_eq(@ltcode.join_ints([7]), "7")

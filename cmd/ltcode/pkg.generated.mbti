@@ -12,6 +12,8 @@ pub fn parse_finite_double(String) -> Double?
 
 pub fn parse_overheads(String) -> Array[Double]
 
+pub fn parse_overheads_strict(String) -> Result[Array[Double], String]
+
 pub fn parse_seed_token(String) -> UInt64?
 
 // Errors

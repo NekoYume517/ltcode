@@ -375,7 +375,14 @@ fn cmd_curve(args : Args) -> Unit {
     Some(v) => v
   }
   // LT-3：非法项必须报错，不能静默丢掉（`1.0,abc,1.5` 只跑两行是欺骗）
-  let overheads = parse_overheads(spec)
+  let overheads = match parse_overheads_strict(spec) {
+    Ok(v) => v
+    Err(bad) => {
+      arg_error("--overheads '\{bad}' is not a positive number")
+      exit_usage()
+      return
+    }
+  }
   if overheads.length() == 0 {
     arg_error("--overheads must list at least one positive number")
     exit_usage()
@@ -527,10 +534,46 @@ fn cmd_distcmp(args : Args) -> Unit {
 }
 
 ///|
-/// 解析 `"1.0,1.1,1.2"`。
+/// 解析 `"1.0,1.1,1.2"`，**非法项导致整条命令失败**（LT-3）。
 ///
-/// **LT-3 extends this**: garbage items must be rejected, not dropped.
-/// 这一条缺陷留给它自己的 commit，这里保持 HEAD 的行为不动。
+/// 旧实现在 `catch { _ => () }` 里把非法段静默丢掉：`--overheads 1.0,abc,1.5`
+/// 只跑两行、exit 0、不吭一声。那不是一个"部分成功"，而是**一次假的实验**
+/// —— 用户以为曲线覆盖了三个点，实际只有两个。度量工具最不能做的就是
+/// 悄悄缩小自己的工作范围。
+///
+/// 返回 `Err(token)` 时 `token` 是**原始片段**（trim 过，但保留用户写的样子），
+/// 这样报错能说"`--overheads 的 'abc' 不是正数`"，用户不用回去数逗号。
+pub fn parse_overheads_strict(spec : String) -> Result[Array[Double], String] {
+  let out : Array[Double] = []
+  // 空串给空列表：`split` 对空串返回一个空元素，那是"什么都没写"，
+  // 不是"写了一个空的项"。子命令随后报 "--overheads must list at least one"。
+  if spec.trim().to_owned().is_empty() {
+    return Ok(out)
+  }
+  for part in spec.split(",") {
+    let trimmed = part.trim().to_owned()
+    // 其余情况下空段（"1.0,,1.5" 或多余逗号）是错：既不是"省略"也不是"默认"
+    if trimmed.is_empty() {
+      return Err("(empty)")
+    }
+    let v = match parse_finite_double(trimmed) {
+      Some(v) => v
+      None => return Err(trimmed)
+    }
+    if v <= 0.0 {
+      return Err(trimmed)
+    }
+    out.push(v)
+  }
+  Ok(out)
+}
+
+///|
+/// 宽松包装：非法项仍然丢弃，但只给**确实想丢弃**的调用方用。
+///
+/// 保留是因为它对"尽力而为"的输入清洗仍然有用；但子命令**不许**用它
+/// —— `cmd_curve` 走 `parse_overheads_strict`。这条注释就是那两个函数
+/// 之间唯一的区别说明，改的人不该两边都改。
 pub fn parse_overheads(spec : String) -> Array[Double] {
   let out : Array[Double] = []
   for part in spec.split(",") {
