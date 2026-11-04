@@ -168,6 +168,39 @@ test "container: truncated input raises, never invents bytes" {
 }
 
 ///|
+/// **LT-4**：`--count 0` 的产出是一个**结构完好、零符号**的容器。
+///
+/// 选择保留这种用法（不改成退出码 2），理由是"0 个符号"是一个良定义的
+/// 下界：`Encoder::symbols(0, 0)` 本来就返回空数组（`encoder_test.mbt`
+/// 锁定这一点），容器格式对 `count = 0` 也没有矛盾 —— 它只声明"这批符号
+/// 里我一个都没带来"。拒绝它会把一个可表达的请求变成不可表达。
+///
+/// 但"能产出"不等于"能解码"，因此这条测试把两件事同时固定住：
+/// 1. 容器仍然可解析，头部字段全部正常；
+/// 2. 解码**必然** `Incomplete`，缺的是全部 K 个源符号，一个都不冤。
+test "container: zero-symbol container parses but always decodes Incomplete" {
+  let k = 4
+  let block = sample_block(k, 3)
+  let payload = sample_payload(block)
+  let symbols : Array[Symbol] = []
+  let packed = pack_container(block, 7UL, payload, 0.1, 0.5, symbols)
+  // 只有头部，没有任何符号体
+  inspect(packed.length(), content="43")
+  let c = unpack_container(packed) catch { _ => abort("unpack raised") }
+  inspect(c.symbols.length(), content="0")
+  inspect(c.k, content="\{k}")
+  assert_eq(c.payload_hash, payload_hash(payload))
+  // 解码：不是错误，是"如实报缺"——缺的正是全部 K 个
+  let r = decode_verified(c) catch {
+    e => abort("unexpected: \{error_text(e)}")
+  }
+  match r {
+    Incomplete(_, missing) => inspect(missing.length(), content="\{k}")
+    Complete(_) => abort("zero symbols cannot possibly decode")
+  }
+}
+
+///|
 /// **LT-2**：魔数不符报 `BadMagic`，不是 `TruncatedSymbol`。
 ///
 /// 旧实现 raise `TruncatedSymbol(data.length(), header_len())`，CLI 于是把
