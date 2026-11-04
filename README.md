@@ -162,6 +162,46 @@ $ echo $?
 **这 51 个下标是真实算出来的**，不是"看起来差不多"。已解出的 49 个源
 符号逐字节正确（有测试跨 200 条种子断言这一点）。
 
+### `--count 0` 的语义：产出无符号容器，解码必然失败
+
+`--count` 的下界是 **0**，不是 1。`encode --count 0` 是**合法**调用，
+它写出的容器结构完好（43 字节头部、K / seed / symbol_len / payload_len /
+哈希/校验和都齐），但 `count = 0` —— 一个编码符号都没有：
+
+```
+$ moon run cmd/ltcode -- encode --input examples/payload.bin \
+    --symbols 10 --count 0 --out zero.ltc
+encoded 4000 bytes -> K=10 symbol_len=400 symbols=0 seed=...
+out: zero.ltc (43 bytes)
+note: --count 0 wrote a symbol-free container; decode will always report INCOMPLETE
+
+$ moon run cmd/ltcode -- decode --input zero.ltc --out zero.out
+decode INCOMPLETE: need more symbols (missing 10 of 10 source symbols)
+missing indices: 0,1,2,3,4,5,6,7,8,9
+$ echo $?
+1
+```
+
+**这个容器只能解码失败**，而且失败方式是如实的 `Incomplete`（缺全部 K 个
+源符号），退出码 1 —— 不是损坏、不是错误、不是"看起来成功的文件"。
+
+为什么保留而不改成退出码 2：
+
+- `0` 是一个**良定义的下界**，不是"非法输入"的近似写法。
+  `Encoder::symbols(first_index, 0)` 本来就返回空数组（`encoder_test.mbt`
+  锁定），容器格式对 `count = 0` 也没有任何矛盾 —— 它只是声明"这批符号
+  我一个都没带来"。
+- 拒绝它会把一个**可表达**的请求变成不可表达：先写头部（K、seed、
+  payload_len、哈希都已经定下来），符号之后再按需生成/补发。这正是
+  rateless 编码的自然用法，而"再要几个符号就行"的补发路径本来就要
+  靠 `index` 递增，不需要先知道总数。
+- 真正需要防的是**误以为它可用**。这一点用产出侧的
+  `note: --count 0 wrote a symbol-free container; decode will always report
+  INCOMPLETE` 明说，加上面这条 README 与 `container_test.mbt` 的
+  「zero-symbol container parses but always decodes Incomplete」锁定，
+  比让命令行直接拒绝更干净 —— 拒绝会让"我想先生成头部"这个正当需求
+  只能靠绕过 CLI 实现。
+
 ### 损坏的数据会被拦住，而不是变成"看起来成功的文件"
 
 裸 LT 有一个不直观的陷阱：收到的符号之间互相矛盾时（传输中被改了一个
@@ -256,12 +296,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 84 tests, all pass
+moon test             # 95 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（84 条，按 `^test "` 计数）：
+测试分布（95 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|

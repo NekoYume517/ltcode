@@ -363,6 +363,13 @@ ltcode distcmp  --symbols K --overhead O --trials T [--seed S]
 
 所有命令的 `--seed` 默认 `0x4C54434F4445`（固定常数，不是时钟）。
 
+`encode --count 0` 是**合法但无意义**的组合：产出只有 43 字节头部、0 个编码
+符号的容器（`entropy=0` 的合法容器），`decode` 对它如实报
+`INCOMPLETE: missing K of K`、退出码 1。不拒绝是因为它本身结构完好
+（可再补符号后解码），拒绝它会让"先建容器、后按需补符号"的用法无处落脚；
+但别把它当"空文件编码" —— 空输入早在 `SourceBlock::from_bytes` 就被
+`EmptySource` 拒掉了。
+
 ### 数值参数的三态与报错
 
 数值参数**不再用 `T?`** 表示（`None` 无法区分"没给"和"给了垃圾"）。
