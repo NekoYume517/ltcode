@@ -341,3 +341,32 @@ ltcode distcmp  --symbols K --overhead O --trials T [--seed S]
 （不一致报用法错误），不给就从文件读。这样"解码只需要这个文件"是真的。
 
 所有命令的 `--seed` 默认 `0x4C54434F4445`（固定常数，不是时钟）。
+
+### 数值参数的三态与报错
+
+数值参数**不再用 `T?`** 表示（`None` 无法区分"没给"和"给了垃圾"）。
+`Args::int` / `uint64` / `double` 返回 `ArgNum[T]`：
+
+```moonbit
+pub(all) enum ArgNum[T] {
+  Absent          // 这个参数没出现 → 用默认值，合法
+  Present(T)      // 拿到了一个真值
+  Invalid(String) // 出现了，但不是数 → 用法错误，exit 2；带原始 token 回显
+}
+```
+
+规则（每一条都由 `cmd/ltcode/cli_test.mbt` 锁定）：
+
+- **整数**：严格十进制，可有一个前导 `-`，必须在 `Int32` 范围内。
+  `abc`、`1.5`、`2147483648`、`0x10` 全部是 `Invalid`。
+- **种子**：十进制，或**显式 `0x` / `0X` 前缀**的十六进制（`0xabc` = 2748）。
+  裸字母串 `abc` 是 `Invalid` —— 它**不是** `0xABC`。负号也是 `Invalid`，
+  不会被悄悄归零。
+- **浮点**：`@strconv` 负责词法，非有限值（`nan` / `inf` / `-inf`）判 `Invalid`。
+- 报错文本统一由 `num_error(key, kind, raw)` 生成：
+  `--symbols needs an integer, got 'abc'`（**带上用户写的原文**）。
+
+> 为什么不用 `@strconv.parse_int` / `parse_int64(base=16)`：
+> 前者会替调用方推断进制（`parse_int("0x10")` = 16），后者的
+> `parse_int64("abc", base=16)` 合法返回 2748。参数层不能猜 ——
+> 一个 token 的进制只能由它自己用 `0x` 前缀声明。

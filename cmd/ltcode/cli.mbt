@@ -3,6 +3,71 @@
 ///
 /// 每个子命令自己负责：参数校验（用法错误 → 退出码 2）、输入校验
 /// （文件读不到/格式不对 → 退出码 3）、业务结果（解码不足 → 退出码 1）。
+///
+/// **数值参数一律走 `req_*` / `opt_*` 两个助手**（LT-1 的修复）：
+/// 它们把"没给"（用默认值或报缺项）和"给了垃圾"（报用法错误并带上原始
+/// token）分开处理。子命令里不允许再出现 `args.int(..).unwrap_or(默认)`
+/// —— 那正是 `--trials abc` 静默跑 100 次的写法。
+
+///|
+/// 必需整数参数。缺 → `missing` 文本；非法 → `--key needs an integer, got '..'`。
+///
+/// 返回 `None` 表示**已经报过错**，调用方负责 `exit_usage()` 并返回。
+fn req_int(args : Args, key : String, missing : String) -> Int32? {
+  match args.int(key) {
+    Absent => {
+      arg_error(missing)
+      None
+    }
+    Invalid(raw) => {
+      arg_error(num_error("--\{key}", "an integer", raw))
+      None
+    }
+    Present(v) => Some(v)
+  }
+}
+
+///|
+/// 可选整数参数：没给就用默认值，给了垃圾照旧报错（不静默回退默认值）。
+fn opt_int(args : Args, key : String, fallback : Int32) -> Int32? {
+  match args.int(key) {
+    Absent => Some(fallback)
+    Invalid(raw) => {
+      arg_error(num_error("--\{key}", "an integer", raw))
+      None
+    }
+    Present(v) => Some(v)
+  }
+}
+
+///|
+/// 必需浮点参数。
+fn req_double(args : Args, key : String, missing : String) -> Double? {
+  match args.double(key) {
+    Absent => {
+      arg_error(missing)
+      None
+    }
+    Invalid(raw) => {
+      arg_error(num_error("--\{key}", "a number", raw))
+      None
+    }
+    Present(v) => Some(v)
+  }
+}
+
+///|
+/// 可选种子：没给用默认常数，给了非法值报错（`--seed abc` / `--seed -1`）。
+fn opt_seed(args : Args) -> UInt64? {
+  match args.uint64("seed") {
+    Absent => Some(@lib.default_seed())
+    Invalid(raw) => {
+      arg_error(num_error("--seed", "a decimal or 0x-prefixed hex number", raw))
+      None
+    }
+    Present(v) => Some(v)
+  }
+}
 
 ///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
@@ -15,9 +80,8 @@ fn cmd_encode(args : Args) -> Unit {
     }
     Some(v) => v
   }
-  let k = match args.int("symbols") {
+  let k = match req_int(args, "symbols", "encode needs --symbols K") {
     None => {
-      arg_error("encode needs --symbols K")
       exit_usage()
       return
     }
@@ -29,11 +93,22 @@ fn cmd_encode(args : Args) -> Unit {
     return
   }
   let out_path = args.str("out").unwrap_or("\{input}.ltc")
-  let seed = args.uint64("seed").unwrap_or(@lib.default_seed())
+  let seed = match opt_seed(args) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
   // 默认 count = ceil(K * 1.5)：够本项目的默认参数成功，又不至于大得离谱
   let count = match args.int("count") {
-    None => (k.to_double() * 1.5).to_int() + 1
-    Some(v) => v
+    Absent => (k.to_double() * 1.5).to_int() + 1
+    Invalid(raw) => {
+      arg_error(num_error("--count", "an integer", raw))
+      exit_usage()
+      return
+    }
+    Present(v) => v
   }
   if count < 0 {
     arg_error("--count must be >= 0")
@@ -116,24 +191,36 @@ fn cmd_decode(args : Args) -> Unit {
       return
     }
   }
-  // --symbols / --seed 是可选核对项：文件自描述，给了就必须一致
+  // --symbols / --seed 是可选核对项：文件自描述，给了就必须一致。
+  // 给了垃圾（`--symbols abc` / `--seed abc` / `--seed -1`）是用法错误，
+  // 不是"这一项没给" —— 静默忽略等于让核对项形同虚设。
   match args.int("symbols") {
-    Some(k) =>
+    Absent => ()
+    Invalid(raw) => {
+      arg_error(num_error("--symbols", "an integer", raw))
+      exit_usage()
+      return
+    }
+    Present(k) =>
       if k != container.k {
         arg_error("--symbols \{k} does not match container K=\{container.k}")
         exit_usage()
         return
       }
-    None => ()
   }
   match args.uint64("seed") {
-    Some(s) =>
+    Absent => ()
+    Invalid(raw) => {
+      arg_error(num_error("--seed", "a decimal or 0x-prefixed hex number", raw))
+      exit_usage()
+      return
+    }
+    Present(s) =>
       if s != container.seed {
         arg_error("--seed \{s} does not match container seed=\{container.seed}")
         exit_usage()
         return
       }
-    None => ()
   }
   // **逐字节校验**由库内的 `decode_verified` 负责（PLAN §9）：
   // 剥皮本身发现不了「收到的符号互相矛盾」—— 一个被改过的度 1 符号
@@ -188,25 +275,42 @@ fn cmd_decode(args : Args) -> Unit {
 ///|
 /// `simulate`：单点成功率。
 fn cmd_simulate(args : Args) -> Unit {
-  let k = match args.int("symbols") {
+  let k = match req_int(args, "symbols", "simulate needs --symbols K") {
     None => {
-      arg_error("simulate needs --symbols K")
       exit_usage()
       return
     }
     Some(v) => v
   }
-  let overhead = match args.double("overhead") {
+  let overhead = match
+    req_double(args, "overhead", "simulate needs --overhead O") {
     None => {
-      arg_error("simulate needs --overhead O")
       exit_usage()
       return
     }
     Some(v) => v
   }
-  let trials = args.int("trials").unwrap_or(100)
-  let seed = args.uint64("seed").unwrap_or(@lib.default_seed())
-  let symbol_len = args.int("symbol-len").unwrap_or(4)
+  let trials = match opt_int(args, "trials", 100) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let seed = match opt_seed(args) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let symbol_len = match opt_int(args, "symbol-len", 4) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
   if k < 1 || trials < 1 || symbol_len < 1 {
     arg_error("--symbols/--trials/--symbol-len must be >= 1")
     exit_usage()
@@ -255,9 +359,8 @@ fn cmd_simulate(args : Args) -> Unit {
 ///|
 /// `curve`：整条曲线。
 fn cmd_curve(args : Args) -> Unit {
-  let k = match args.int("symbols") {
+  let k = match req_int(args, "symbols", "curve needs --symbols K") {
     None => {
-      arg_error("curve needs --symbols K")
       exit_usage()
       return
     }
@@ -271,15 +374,34 @@ fn cmd_curve(args : Args) -> Unit {
     }
     Some(v) => v
   }
+  // LT-3：非法项必须报错，不能静默丢掉（`1.0,abc,1.5` 只跑两行是欺骗）
   let overheads = parse_overheads(spec)
   if overheads.length() == 0 {
     arg_error("--overheads must list at least one positive number")
     exit_usage()
     return
   }
-  let trials = args.int("trials").unwrap_or(100)
-  let seed = args.uint64("seed").unwrap_or(@lib.default_seed())
-  let symbol_len = args.int("symbol-len").unwrap_or(4)
+  let trials = match opt_int(args, "trials", 100) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let seed = match opt_seed(args) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let symbol_len = match opt_int(args, "symbol-len", 4) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
   if k < 1 || trials < 1 || symbol_len < 1 {
     arg_error("--symbols/--trials/--symbol-len must be >= 1")
     exit_usage()
@@ -328,25 +450,42 @@ fn cmd_curve(args : Args) -> Unit {
 /// 这条命令存在的意义是让「鲁棒孤波的 τ 尖峰到底有没有用」变成一个
 /// 可以被任何人当场复现的实验，而不是文档里的一句断言。
 fn cmd_distcmp(args : Args) -> Unit {
-  let k = match args.int("symbols") {
+  let k = match req_int(args, "symbols", "distcmp needs --symbols K") {
     None => {
-      arg_error("distcmp needs --symbols K")
       exit_usage()
       return
     }
     Some(v) => v
   }
-  let overhead = match args.double("overhead") {
+  let overhead = match
+    req_double(args, "overhead", "distcmp needs --overhead O") {
     None => {
-      arg_error("distcmp needs --overhead O")
       exit_usage()
       return
     }
     Some(v) => v
   }
-  let trials = args.int("trials").unwrap_or(100)
-  let seed = args.uint64("seed").unwrap_or(@lib.default_seed())
-  let symbol_len = args.int("symbol-len").unwrap_or(4)
+  let trials = match opt_int(args, "trials", 100) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let seed = match opt_seed(args) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
+  let symbol_len = match opt_int(args, "symbol-len", 4) {
+    None => {
+      exit_usage()
+      return
+    }
+    Some(v) => v
+  }
   if k < 1 || trials < 1 || symbol_len < 1 || overhead <= 0.0 {
     arg_error("--symbols/--trials/--symbol-len must be >= 1, --overhead > 0")
     exit_usage()
@@ -389,18 +528,17 @@ fn cmd_distcmp(args : Args) -> Unit {
 
 ///|
 /// 解析 `"1.0,1.1,1.2"`。
+///
+/// **LT-3 extends this**: garbage items must be rejected, not dropped.
+/// 这一条缺陷留给它自己的 commit，这里保持 HEAD 的行为不动。
 pub fn parse_overheads(spec : String) -> Array[Double] {
   let out : Array[Double] = []
   for part in spec.split(",") {
-    let trimmed = part.trim()
+    let trimmed = part.trim().to_owned()
     if !trimmed.is_empty() {
-      try {
-        let v = @strconv.parse_double(trimmed)
-        if v > 0.0 {
-          out.push(v)
-        }
-      } catch {
-        _ => ()
+      match parse_finite_double(trimmed) {
+        Some(v) => if v > 0.0 { out.push(v) }
+        None => ()
       }
     }
   }

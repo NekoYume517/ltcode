@@ -4,20 +4,32 @@ package "NekoYume517/ltcode/cmd/ltcode"
 // Values
 pub fn join_ints(Array[Int32]) -> String
 
+pub fn num_error(String, String, String) -> String
+
 pub fn parse_args(Array[String]) -> Args
 
+pub fn parse_finite_double(String) -> Double?
+
 pub fn parse_overheads(String) -> Array[Double]
+
+pub fn parse_seed_token(String) -> UInt64?
 
 // Errors
 
 // Types and methods
+pub(all) enum ArgNum[T] {
+  Absent
+  Present(T)
+  Invalid(String)
+}
+
 pub struct Args {
   map : Map[String, String]
 }
-pub fn Args::double(Self, String) -> Double?
-pub fn Args::int(Self, String) -> Int32?
+pub fn Args::double(Self, String) -> ArgNum[Double]
+pub fn Args::int(Self, String) -> ArgNum[Int32]
 pub fn Args::str(Self, String) -> String?
-pub fn Args::uint64(Self, String) -> UInt64?
+pub fn Args::uint64(Self, String) -> ArgNum[UInt64]
 
 // Type aliases
 
