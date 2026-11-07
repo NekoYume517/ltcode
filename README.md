@@ -6,7 +6,7 @@
 就能还原原始数据。丢掉哪些不重要，补发多少由丢包率决定 —— 这就是
 "无速率"（rateless）的含义。
 
-[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261016-blueviolet)](https://www.moonbitlang.com/)
+[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261102-blueviolet)](https://www.moonbitlang.com/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ---
