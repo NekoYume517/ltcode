@@ -70,6 +70,16 @@ fn opt_seed(args : Args) -> UInt64? {
 }
 
 ///|
+/// `--count` 的量级上限（LC-1，2026-11-08 审计）。
+///
+/// count 只查 < 0 时，`--count 2147483647` 进入 enc.symbols 的逐符号
+/// 生成循环（度分布采样 + GF(256) 运算），实测 120 秒不终止 —— 既不是
+/// 用法错误也不是数据错误，就是挂死。这里需要的不是溢出防护而是
+/// **量级上限**：百万符号容器（每符号约 5+ 字节，数十 MB）已远超
+/// 本项目「K 至多数千」的定位，超限一律用法错误并写明上限。
+pub const LT_MAX_COUNT : Int32 = 1_000_000
+
+///|
 /// `--count 0` 产出无符号容器时打印的那句提示。
 ///
 /// 抽成函数而非常量，是为了让 README / API.md 逐字引用的那句话有**唯一**
@@ -133,6 +143,15 @@ fn cmd_encode(args : Args) -> Unit {
   }
   if count < 0 {
     arg_error("--count must be >= 0")
+    exit_usage()
+    return
+  }
+  // LC-1：巨大 count 会让 enc.symbols 挂死（实测 120s 不终止），量级
+  // 上限拒绝而不是坐进无界分配。
+  if count > LT_MAX_COUNT {
+    arg_error(
+      "--count must be <= \{LT_MAX_COUNT} (got \{count}); split the payload or raise K instead",
+    )
     exit_usage()
     return
   }
