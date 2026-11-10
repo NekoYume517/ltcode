@@ -2,6 +2,8 @@
 package "NekoYume517/ltcode/cmd/ltcode"
 
 // Values
+pub const LT_MAX_COUNT : Int32 = 1_000_000
+
 pub fn encode_note(Int32) -> String
 
 pub fn join_ints(Array[Int32]) -> String
