@@ -308,8 +308,27 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   let delta = dequantize_param(r.byte())
   // K 按无符号原值读出：后面的两个上界要用它做乘法，而它在 Int32 里可能
   // 是负数（`0x80000000`），负负相乘会把上界算成天文数字从而**放行**本该
-  // 拒绝的 payload_len。K 自身的域校验见 LT-G（另一条）。
+  // 拒绝的 payload_len。
   let k_raw = r.u32_unsigned()
+  // K 自身的域校验（LT-G，2026-11-10 审计）。
+  //
+  // 修复前 `K = 0x80000000` 变负后一路走到 `decoder.mbt` 的 `if k < 1`，
+  // CLI 于是输出
+  //
+  //   ltcode: decode error: empty source: at least one source symbol with a
+  //           non-zero length is required
+  //
+  // —— 把一个**头部字段非法**说成「输入为空」。用户据此会去检查自己的源
+  // 文件，而那个文件根本没参与这次解码（decode 只读容器）。
+  //
+  // 上界的两个方向也一并收归这里：`K = 0` 同样误导（同一个空输入文案），
+  // `K > max_source_symbols()` 会走 `SourceTooLarge`，文案读起来像
+  // 「**你**给的源太大」，而实际是文件头部声明的 K 越界。三者对调用方的
+  // 动作指引完全一样：这个文件不该被本构建读。
+  let k_max = max_source_symbols().to_uint64()
+  if k_raw < 1UL || k_raw > k_max {
+    raise LtError::InvalidHeaderField("K", k_raw, 1UL, k_max)
+  }
   let k = k_raw.to_int()
   let seed = r.u64()
   // symbol_len：同样按无符号验证。上界取「一个符号体不可能比整个文件还长」。
