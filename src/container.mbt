@@ -197,7 +197,7 @@ fn Reader::byte(self : Reader) -> Int32 raise LtError {
 ///
 /// **长度检查必须先算差再比**（LT-C，2026-11-10 审计）：
 ///
-/// ```moonbit
+/// ```moonbit nocheck
 /// if n < 0 || self.pos + n > self.data.length()   // ❌ 回绕
 /// ```
 ///
@@ -371,7 +371,7 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   let count_raw = r.u32_unsigned()
   let int32_max_u = 2147483647UL
   let body_len = 4UL + symbol_len_raw
-  let remaining = (data.length().to_uint64()) - header_len().to_uint64()
+  let remaining = data.length().to_uint64() - header_len().to_uint64()
   let count_max = remaining / body_len
   if count_raw > int32_max_u {
     raise LtError::InvalidHeaderField("count", count_raw, 0UL, count_max)
