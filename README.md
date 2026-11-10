@@ -339,25 +339,35 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 97 tests, all pass
+moon test             # 149 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（97 条，按 `^test "` 计数）：
+测试分布（149 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
 | `gf256_test.mbt` | 9 | 65536 对乘法全量对照、255 次求逆、FIPS-197 锚点、结合律抽样 |
+| `gf256_domain_test.mbt` | 8 | 输入按元素截断到低 8 位、负指数归一、大指数不溢出（2026-11-10 审计） |
 | `rng_test.mbt` | 9 | 前 16 输出锁定、拒绝采样阈值、取模偏差可见性 |
 | `distribution_test.mbt` | 13 | 归一化 1e-12、τ 尖峰、3σ 采样、整条 pmf、K=1/2/3 |
 | `encoder_test.mbt` | 10 | 确定性、无放回、20 个子集穷举、O(d) 内存、K=1 退化 |
 | `decoder_test.mbt` | 13 | 诚实报缺、跨 200 种子诚实性、无度 1 结构断言、操作计数线性 |
 | `metrics_test.mbt` | 12 | 格式化、可复现、分布对照方向、零试验不产生 NaN |
+| `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
+| `header_guard_test.mbt` | 7 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计） |
+| `trailing_guard_test.mbt` | 5 | 尾部多余字节（追加垃圾 / 拼接容器）必须报错 |
+| `k_field_test.mbt` | 6 | 头部 K 字段域校验与独立文案 |
+| `overflow_guard_test.mbt` | 3 | 头部字段越界走分类错误而非 panic |
 | `verified_test.mbt` | 3 | 完好容器通过校验、篡改必 raise `CorruptionDetected` |
 | `symbol_test.mbt` | 3 | `reassemble` 逐字节还原、按 `payload_len` 截零、空输入不 panic |
+| `inconsistent_test.mbt` | 2 | `DecodeStats.inconsistent` 结构性恒 0 的护栏 |
 | `cli_test.mbt` | 14 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
+| `unknown_flag_test.mbt` | 7 | 未知 `--flag` 与位置参数报用法错误 |
+| `default_count_test.mbt` | 5 | 默认 `--count` 触顶时说明「默认值超限」 |
+| `count_guard_test.mbt` | 1 | `--count` 上限常量与语义（LC-1） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，
