@@ -246,6 +246,13 @@ pub fn encode_note(count : Int32) -> String {
 ///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
 fn cmd_encode(args : Args) -> Unit {
+  // LT-F：未知选项 / 位置参数先拒（笔误的键会让核对项静默失效）
+  let unk = unknown_arg_error(args, "encode")
+  if !unk.is_empty() {
+    arg_error(unk)
+    exit_usage()
+    return
+  }
   let input = match args.str("input") {
     None => {
       arg_error("encode needs --input")
@@ -360,6 +367,14 @@ fn cmd_encode(args : Args) -> Unit {
 ///|
 /// `decode`：读容器 → 剥皮 → 成功写出原文，失败打印缺项并退出码 1。
 fn cmd_decode(args : Args) -> Unit {
+  // LT-F：这条命令的 `--symbols` / `--seed` 是**可选核对项**，笔误的键
+  // （`--seedx`）会让核对静默失效 —— 最典型的"命令行看着成功、检查没跑"。
+  let unk = unknown_arg_error(args, "decode")
+  if !unk.is_empty() {
+    arg_error(unk)
+    exit_usage()
+    return
+  }
   let input = match args.str("input") {
     None => {
       arg_error("decode needs --input")
@@ -468,6 +483,12 @@ fn cmd_decode(args : Args) -> Unit {
 ///|
 /// `simulate`：单点成功率。
 fn cmd_simulate(args : Args) -> Unit {
+  let unk = unknown_arg_error(args, "simulate")
+  if !unk.is_empty() {
+    arg_error(unk)
+    exit_usage()
+    return
+  }
   let k = match req_int(args, "symbols", "simulate needs --symbols K") {
     None => {
       exit_usage()
@@ -558,6 +579,12 @@ fn cmd_simulate(args : Args) -> Unit {
 ///|
 /// `curve`：整条曲线。
 fn cmd_curve(args : Args) -> Unit {
+  let unk = unknown_arg_error(args, "curve")
+  if !unk.is_empty() {
+    arg_error(unk)
+    exit_usage()
+    return
+  }
   let k = match req_int(args, "symbols", "curve needs --symbols K") {
     None => {
       exit_usage()
@@ -661,6 +688,12 @@ fn cmd_curve(args : Args) -> Unit {
 /// 这条命令存在的意义是让「鲁棒孤波的 τ 尖峰到底有没有用」变成一个
 /// 可以被任何人当场复现的实验，而不是文档里的一句断言。
 fn cmd_distcmp(args : Args) -> Unit {
+  let unk = unknown_arg_error(args, "distcmp")
+  if !unk.is_empty() {
+    arg_error(unk)
+    exit_usage()
+    return
+  }
   let k = match req_int(args, "symbols", "distcmp needs --symbols K") {
     None => {
       exit_usage()

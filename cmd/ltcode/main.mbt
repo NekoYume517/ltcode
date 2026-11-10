@@ -64,38 +64,115 @@ fn exit_bad_input() -> Unit {
 ///
 /// 位置参数（不以 `--` 开头）**不接受**：本 CLI 的每个子命令都要求显式
 /// 命名参数，这样 `ltcode encode foo` 会被当作错误而不是「碰巧被忽略的
-/// 多余参数」。因此这里没有 `rest` 字段 —— 早先版本有一个但从未被读取，
-/// 留着只会让「多写的参数去哪了」变成一个谜。
+/// 多余参数」。
+///
+/// **但"不接受"必须真的被检查**（LT-F，2026-11-10 审计）。修复前这里只
+/// 把位置参数**跳过**、对未知 `--key` 从不检查，于是：
+///
+/// ```
+/// ltcode decode --input x.ltc --out y.bin --seedx 999999   → exit 0
+/// ltcode decode --input x.ltc --out y.bin some-junk        → exit 0
+/// ```
+///
+/// 前者最危险：用户以为指定了种子核对（`--seedx` 是 `--seed` 的笔误），
+/// 而那个核对根本没跑 —— 命令行的"成功"掩盖了一个手动核对项的静默失效。
+/// 后者与上面那句注释直接矛盾：承诺的行为从来没被实现。
+///
+/// 因此 `Args` 现在记录两样东西：
+/// - `positional`：全部位置参数（原位 token，供报错回显）
+/// - `order`：**按 argv 出现顺序**记录的键名（报错时按这个顺序找第一个
+///   未知键，而不是按 `Map` 的哈希序 —— 否则报哪个会随机变，脚本按文本
+///   匹配就会失效）
 pub struct Args {
   map : Map[String, String]
+  positional : Array[String]
+  order : Array[String]
 }
 
 ///|
 pub fn parse_args(argv : Array[String]) -> Args {
   let map : Map[String, String] = Map([])
-  let mut i = 1 // argv[0] 是可执行文件路径
+  let positional : Array[String] = []
+  let order : Array[String] = []
+  // argv[0] 是可执行文件路径，argv[1] 是子命令 —— 两者都不是"参数"。
+  // 修复前从 1 开始扫，`decode` 自己会被当成位置参数；现在从 2 开始。
+  let mut i = 2
   while i < argv.length() {
     let a = argv[i]
     if a.has_prefix("--") {
-      let body = a.view(start_offset=2).to_owned()
+      let body = a.clamped_view(start=2, end=a.length()).to_owned()
       match body.find("=") {
         Some(eq) => {
-          let key : String = body.view(end_offset=eq).to_owned()
-          let value : String = body.view(start_offset=eq + 1).to_owned()
+          let key : String = body.clamped_view(start=0, end=eq).to_owned()
+          let value : String = body
+            .clamped_view(start=eq + 1, end=body.length())
+            .to_owned()
           map[key] = value
+          order.push(key)
         }
-        None =>
-          if i + 1 < argv.length() {
-            map[body] = argv[i + 1]
+        None => {
+          map[body] = if i + 1 < argv.length() {
+            let v = argv[i + 1]
             i = i + 1
+            v
           } else {
-            map[body] = ""
+            ""
           }
+          order.push(body)
+        }
       }
+    } else {
+      // 位置参数：不再静默跳过，记下来交给 unknown_arg_error 报错
+      positional.push(a)
     }
     i = i + 1
   }
-  { map, }
+  { map, positional, order, }
+}
+
+///|
+/// 每个子命令**接受**的键。
+///
+/// 集中定义而不是散在子命令里，是因为这张表就是"命令行契约"的一份声明：
+/// 看一眼就该知道某个参数属于哪个命令。`decode` 的 `--symbols` / `--seed`
+/// 是**可选核对项**（文件自描述），因此它们出现在 decode 里。
+pub fn accepted_keys(cmd : String) -> Array[String] {
+  match cmd {
+    "encode" => ["input", "symbols", "seed", "count", "out"]
+    "decode" => ["input", "out", "symbols", "seed"]
+    "simulate" => ["symbols", "overhead", "trials", "seed", "symbol-len"]
+    "curve" => ["symbols", "overheads", "trials", "seed", "symbol-len"]
+    "distcmp" => ["symbols", "overhead", "trials", "seed", "symbol-len"]
+    // help 不接受任何参数
+    _ => []
+  }
+}
+
+///|
+/// 把 `Args` 里**不属于**该子命令的东西挑出来，返回可直接当用法错误
+/// 打印的文本；干净时返回空串（与 `encode_note` / 各 guard 同形状）。
+///
+/// 报错带上**原始 token**：
+/// - 未知键 → `--seedx`（带 `--` 前缀，用户能直接对上自己写的）
+/// - 位置参数 → `some-junk`（原样）
+///
+/// 多个问题时按 argv 顺序报**第一个**：一次只说一件事，用户改完再看下一件。
+/// 全列出来会让本就写错的命令行更难读。
+pub fn unknown_arg_error(args : Args, cmd : String) -> String {
+  let allowed = accepted_keys(cmd)
+  let mut i = 0
+  while i < args.order.length() {
+    let key = args.order[i]
+    if !allowed.contains(key) {
+      return "unknown option '--\{key}' for \{cmd}; run 'ltcode help' for the accepted options"
+    }
+    i = i + 1
+  }
+  if args.positional.length() > 0 {
+    let tok = args.positional[0]
+    return "unexpected positional argument '\{tok}'; every argument to \{cmd} must be a named --option"
+  }
+  ""
 }
 
 ///|
@@ -313,6 +390,14 @@ fn main {
     "curve" => cmd_curve(args)
     "distcmp" => cmd_distcmp(args)
     "help" => {
+      // help 也走同一道检查：`ltcode help --verbose` 里的 --verbose 没有
+      // 去处，静默忽略等于让「我明明加了参数」变成一个谜。
+      let msg = unknown_arg_error(args, "help")
+      if !msg.is_empty() {
+        arg_error(msg)
+        exit_usage()
+        return
+      }
       println(usage())
       exit_ok()
     }
