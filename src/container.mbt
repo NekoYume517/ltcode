@@ -128,6 +128,31 @@ priv struct Reader {
 }
 
 ///|
+/// 大端 u32，**按无符号语义**返回到 `UInt64`。
+///
+/// 头部里 `K` / `symbol_len` / `count` 都是 u32，而本项目内部一律有符号
+/// `Int32`。直接 `u32()` 会让 `0xFFFFFFFF` 变成 `-1`、`0x80000000` 变成
+/// `-2147483648`，而这两个值在后续逻辑里会**静默吃掉**符号（`i < count`
+/// 一次都不执行）。因此头部的 u32 字段统一先按 u64 原值读出、做域校验，
+/// 确认在域内才 `to_int()`。
+///
+/// 长度检查同样用「剩余字节」形式（见 `Reader::bytes`）：这里只读 4 字节，
+/// 但同一族的写法必须一致，否则以后有人「顺手」把它改成变长读取就又回到
+/// Int32 回绕那个问题上。
+fn Reader::u32_unsigned(self : Reader) -> UInt64 raise LtError {
+  let remaining = self.data.length() - self.pos
+  if 4 > remaining {
+    raise LtError::TruncatedSymbol(remaining, 4)
+  }
+  let mut v = 0UL
+  for i = 0; i < 4; i = i + 1 {
+    v = (v << 8) | (self.data[self.pos + i].to_uint64() & 0xFFUL)
+  }
+  self.pos = self.pos + 4
+  v
+}
+
+///|
 /// 读一个大端 u32。长度检查同样用「剩余字节」形式（见 `Reader::bytes`）。
 fn Reader::u32(self : Reader) -> Int32 raise LtError {
   let remaining = self.data.length() - self.pos
@@ -172,7 +197,7 @@ fn Reader::byte(self : Reader) -> Int32 raise LtError {
 ///
 /// **长度检查必须先算差再比**（LT-C，2026-11-10 审计）：
 ///
-/// ```moonbit nocheck
+/// ```moonbit
 /// if n < 0 || self.pos + n > self.data.length()   // ❌ 回绕
 /// ```
 ///
@@ -245,6 +270,24 @@ pub(all) struct Container {
 
 ///|
 /// 反序列化。任何结构性问题都报明确错误（不猜）。
+///
+/// ## 头部字段的域校验（LT-A，2026-11-10 审计）
+///
+/// 头里的 `K` / `symbol_len` / `payload_len` / `count` 在文件里都是**无符号**
+/// 字段（u32 / u64），而本项目内部一律用有符号 `Int32`。直接读取会静默
+/// 转换出两种坏值：
+///
+/// - **变负**：`count = 0xFFFFFFFF` → `-1`。`for i = 0; i < count` 一次都不
+///   执行，300 个好符号被丢光，于是解码报 `INCOMPLETE: missing 100 of 100`、
+///   退出码 1 —— 调用方会去补发符号，而真实原因是"头部说这里有 42 亿个"。
+///   这是**误导性的业务状态**，不是损坏、不是用法错误。
+/// - **截断**：`payload_len = 2^32 + 5` → `5`。解码"成功"但只写出 5 字节
+///   原文，其余被 `reassemble` 截掉（校验和只是碰巧兜住一次，不是保证）。
+///
+/// 两者都不是崩溃，因此必须显式校验。校验落在 unpack 是因为它是唯一入口：
+/// `decode_verified`、CLI、测试都从它进，让每个调用方各自记得查，迟早有人
+/// 漏一次。校验用的是**文件自身的剩余字节**，不需要任何外部信息 —— 与
+/// 「解码只需要这个文件」这条契约一致。
 pub fn unpack_container(data : Bytes) -> Container raise LtError {
   if data.length() < header_len() {
     raise LtError::TruncatedSymbol(data.length(), header_len())
@@ -263,19 +306,70 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   }
   let c = dequantize_param(r.byte())
   let delta = dequantize_param(r.byte())
-  let k = r.u32()
+  // K 按无符号原值读出：后面的两个上界要用它做乘法，而它在 Int32 里可能
+  // 是负数（`0x80000000`），负负相乘会把上界算成天文数字从而**放行**本该
+  // 拒绝的 payload_len。K 自身的域校验见 LT-G（另一条）。
+  let k_raw = r.u32_unsigned()
+  let k = k_raw.to_int()
   let seed = r.u64()
-  let symbol_len = r.u32()
-  let payload_len = r.u64().to_int()
+  // symbol_len：同样按无符号验证。上界取「一个符号体不可能比整个文件还长」。
+  let symbol_len_raw = r.u32_unsigned()
+  let symbol_len_max = data.length().to_uint64()
+  if symbol_len_raw < 1UL || symbol_len_raw > symbol_len_max {
+    raise LtError::InvalidHeaderField(
+      "symbol_len", symbol_len_raw, 1UL, symbol_len_max,
+    )
+  }
+  let symbol_len = symbol_len_raw.to_int()
+  // payload_len：u64。合法上界受两个约束——`K × symbol_len`（`from_bytes`
+  // 切块后的最大长度），以及 `Int32` 正数上限（`reassemble` 与
+  // `Container.payload_len` 都用有符号 Int32，超出必须报错而不是截断）。
+  let payload_len = r.u64()
+  let mut payload_len_max = k_raw * symbol_len_raw
+  let int32_max = 2147483647UL
+  if payload_len_max > int32_max {
+    payload_len_max = int32_max
+  }
+  if payload_len > payload_len_max {
+    raise LtError::InvalidHeaderField(
+      "payload_len", payload_len, 0UL, payload_len_max,
+    )
+  }
   let payload_hash = r.u64()
-  let count = r.u32()
+  // count：u32，**分两层**判，因为"头部字段离谱"与"文件被截断"在头部上
+  // 是不可区分的（都表现为「剩余字节装不下 count 个符号」），而两者对调用方
+  // 的动作指引不同：
+  //
+  // 1. `count_raw > Int32 上限`：这个值转成 Int32 会变负，而
+  //    `for i = 0; i < count` 对负数一次都不执行 —— 符号被**静默丢弃**，
+  //    解码于是报 `INCOMPLETE`。这是 LT-A 的直接症状，必须报头部字段非法。
+  // 2. `count_raw > count_max` 但仍在 Int32 正数范围内：只可能是文件被截断
+  //    （或者 count 被改小/改大这种手工拼接）。报 `TruncatedSymbol`，
+  //    措辞与真正的"读到一半没字节了"一致，调用方知道该重传。
+  //
+  // 上限本身：每个符号占 `4 + symbol_len` 字节（index + body），符号体在
+  // 文档化的头部契约里是定长的，因此这个除法是精确的，不是估计。
+  let count_raw = r.u32_unsigned()
+  let int32_max_u = 2147483647UL
+  let body_len = 4UL + symbol_len_raw
+  let remaining = data.length().to_uint64() - header_len().to_uint64()
+  let count_max = remaining / body_len
+  if count_raw > int32_max_u {
+    raise LtError::InvalidHeaderField("count", count_raw, 0UL, count_max)
+  }
+  if count_raw > count_max {
+    // 报「够读几个符号 / 头部说要几个」而不是把两个字节数硬凑成同一量纲：
+    // 这里说的就是符号个数，用户不需要自己再做一次除法。
+    raise LtError::TruncatedSymbol(count_max.to_int(), count_raw.to_int())
+  }
+  let count = count_raw.to_int()
   let symbols : Array[ReceivedSymbol] = []
   for i = 0; i < count; i = i + 1 {
     let index = r.u32()
     let body = r.bytes(symbol_len)
     symbols.push(ReceivedSymbol::{ index, data: body, })
   }
-  { k, seed, symbol_len, payload_len, payload_hash, c, delta, symbols, }
+  { k, seed, symbol_len, payload_len: payload_len.to_int(), payload_hash, c, delta, symbols, }
 }
 
 ///|
