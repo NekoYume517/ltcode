@@ -80,6 +80,149 @@ fn opt_seed(args : Args) -> UInt64? {
 pub const LT_MAX_COUNT : Int32 = 1_000_000
 
 ///|
+/// 度量侧的量级上限（LT-B，2026-11-10 审计）。
+///
+/// LC-1 只给 `--count` 加了上限，`simulate` / `curve` / `distcmp` 这一侧的
+/// 三个参数原封不动，于是同一类挂死原样存在：
+///
+/// ```
+/// simulate --symbols 1000 --overhead 2500000 --trials 1        → 40s 挂死
+/// simulate --symbols 1000 --overhead 1e300     --trials 1        → 同上
+/// simulate --symbols 10   --overhead 1.2 --trials 2147483647     → 同上
+/// simulate --symbols 10   --overhead 1.2 --trials 1 --symbol-len 2000000000
+///                                                                → 60s 挂死
+/// ```
+///
+/// 三处根因同源：这些量都直接决定**逐符号循环的次数或每次迭代的分配量**。
+///
+/// - `--trials`：`decode_success_rate` 的外层循环次数。
+/// - `--overhead` → `received_count`：`.to_int()` 对 2.5e9 与 1e300 都
+///   **饱和**到 `2147483647`，于是内层循环 21 亿次。
+/// - `--symbol-len`：`FixedArray::make(symbol_len, …)` 的尺寸，每次试验
+///   每个符号都要一份。
+///
+/// 因此和 LC-1 对称：pub 常量 + 守卫函数 + CLI 报用法错误 exit 2。
+///
+/// 取值依据（不是调优产物，是显式边界）：
+/// - `LT_MAX_TRIALS = 10_000_000`：README 实测最大 1000（整条 curve 500 次）。
+///   取 1e7 给「长跨度种子扫描」留足余量，同时把 21 亿明确拒掉。
+/// - `LT_MAX_RECEIVED = 4_000_000`：单次试验的符号数。K 上限是 1<<20
+///   (1,048,576)，overhead 到 4.0 约 419 万；再高该换 K 而不是加 overhead。
+/// - `LT_MAX_SYMBOL_LEN = 1 << 20`：单符号 1MB。再大就该改分块策略。
+pub const LT_MAX_TRIALS : Int32 = 10_000_000
+
+///|
+/// 单次试验可收到的符号数上限（见 `LT_MAX_TRIALS` 的说明）。
+pub const LT_MAX_RECEIVED : Int32 = 4_000_000
+
+///|
+/// 单符号长度上限（字节）。
+pub const LT_MAX_SYMBOL_LEN : Int32 = 1 << 20
+
+///|
+/// `--trials` 守卫：超限返回用法错误文本，合法返回空串。
+///
+/// 返回 `String`（而非 `Option`）与 `encode_note` 同形状：调用点只想
+/// `if !msg.is_empty() { arg_error(msg); exit_usage(); return }`。
+pub fn guard_trials(trials : Int32) -> String {
+  if trials > LT_MAX_TRIALS {
+    "--trials must be <= \{LT_MAX_TRIALS} (got \{trials}); a longer run needs a smaller --overhead or a narrower seed range"
+  } else {
+    ""
+  }
+}
+
+///|
+/// `--overhead` 守卫：它真正决定的是**收到的符号数** `floor(K × overhead)`。
+///
+/// 因此守卫量是那个乘积，不是 overhead 本身 —— 同一个 overhead 在 K=10
+/// 时无害、在 K=1<<20 时致命。这也解释上限文案为什么写 `received`。
+///
+/// `nan` / `inf` 在这里也要挡：`nan > 上限` 为 false，`inf` 会绕过比较，
+/// 而两者都能让 `received_count` 给出饱和值（参数层已经拒了非有限值，
+/// 但守卫是库层入口，可能被别处调用）。
+pub fn guard_overhead(k : Int32, overhead : Double) -> String {
+  if overhead.is_nan() || overhead.is_inf() {
+    "--overhead must be a finite number, got \{overhead}"
+  } else {
+    let received = received_count_checked(k, overhead)
+    if received > LT_MAX_RECEIVED {
+      "--overhead \{overhead} at K=\{k} needs \{received} symbols, above the limit of \{LT_MAX_RECEIVED}; raise K instead of overhead"
+    } else {
+      ""
+    }
+  }
+}
+
+///|
+/// 单符号长度守卫。
+pub fn guard_symbol_len(symbol_len : Int32) -> String {
+  if symbol_len > LT_MAX_SYMBOL_LEN {
+    "--symbol-len must be <= \{LT_MAX_SYMBOL_LEN} (got \{symbol_len}); use more symbols instead of longer ones"
+  } else {
+    ""
+  }
+}
+
+///|
+/// 三个度量子命令共用的量级守卫（LT-B）。
+///
+/// `overheads` 是列表是因为 `curve` 一次要跑多个点 —— 每个点都会独立决定
+/// 一次 `received_count`，因此必须逐个查，不能只看第一个。
+///
+/// 返回 `true` = 全部在域内；`false` = 已经报过用法错误，调用方直接
+/// `exit_usage()` 返回。先查 trials / symbol-len（与 K 无关）再查 overhead，
+/// 是为了让「两个参数都离谱」时报出**最外层**那个（用户改一次就能看到进展）。
+fn check_metric_magnitudes(
+  k : Int32,
+  overheads : Array[Double],
+  trials : Int32,
+  symbol_len : Int32,
+) -> Bool {
+  let trials_msg = guard_trials(trials)
+  if !trials_msg.is_empty() {
+    arg_error(trials_msg)
+    return false
+  }
+  let len_msg = guard_symbol_len(symbol_len)
+  if !len_msg.is_empty() {
+    arg_error(len_msg)
+    return false
+  }
+  for oh in overheads {
+    let oh_msg = guard_overhead(k, oh)
+    if !oh_msg.is_empty() {
+      arg_error(oh_msg)
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// `floor(K × overhead)`，与 `@lib.received_count` **同一个公式**，
+/// 但**不在 Int32 上饱和**：超限时返回 `Int32` 最大值让守卫看得见。
+///
+/// 为什么不直接用库里的 `received_count`：它的 `.to_int()` 会把 2.5e9 与
+/// 1e300 都饱和成 2147483647 —— 那个值**看起来**只比上限大一倍，而真实
+/// 请求是 100 万倍。守卫需要知道"到底多大"才能说清话。
+fn received_count_checked(k : Int32, overhead : Double) -> Int32 {
+  if overhead <= 0.0 || k <= 0 {
+    0
+  } else {
+    let n = (k.to_double() * overhead).to_int()
+    // 饱和语义：要么 Double 本身已经 > Int32 上限（`to_int` 给出
+    // 2147483647），要么乘积在范围内。两种都不需要再夹一次 ——
+    // 重要的是**守卫拒绝它**，而不是把数字还原出来。
+    if n < 0 {
+      0
+    } else {
+      n
+    }
+  }
+}
+
+///|
 /// `--count 0` 产出无符号容器时打印的那句提示。
 ///
 /// 抽成函数而非常量，是为了让 README / API.md 逐字引用的那句话有**唯一**
@@ -371,6 +514,12 @@ fn cmd_simulate(args : Args) -> Unit {
     exit_usage()
     return
   }
+  // LT-B：量级上限。修复前 overhead 2500000 / 1e300、trials 2147483647、
+  // symbol-len 2000000000 都会让这条命令挂死（实测 40~60 秒不终止）。
+  if !check_metric_magnitudes(k, [overhead], trials, symbol_len) {
+    exit_usage()
+    return
+  }
   let point = @lib.decode_success_rate(
     k,
     overhead,
@@ -464,6 +613,11 @@ fn cmd_curve(args : Args) -> Unit {
     exit_usage()
     return
   }
+  // LT-B：逐个 overhead 查量级（`1.0,2500000` 这种混在列表里的值同样致命）
+  if !check_metric_magnitudes(k, overheads, trials, symbol_len) {
+    exit_usage()
+    return
+  }
   let points = @lib.evaluate(
     k,
     overheads,
@@ -545,6 +699,13 @@ fn cmd_distcmp(args : Args) -> Unit {
   }
   if k < 1 || trials < 1 || symbol_len < 1 || overhead <= 0.0 {
     arg_error("--symbols/--trials/--symbol-len must be >= 1, --overhead > 0")
+    exit_usage()
+    return
+  }
+  // LT-B：`distcmp` 把同一个 (K, overhead, trials) 跑**三种**分布，
+  // 因此它对这几个参数的敏感度是 simulate 的三倍 —— 同一个守卫值在这里
+  // 尤其不能漏。
+  if !check_metric_magnitudes(k, [overhead], trials, symbol_len) {
     exit_usage()
     return
   }
