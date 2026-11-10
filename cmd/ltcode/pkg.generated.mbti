@@ -4,7 +4,27 @@ package "NekoYume517/ltcode/cmd/ltcode"
 // Values
 pub const LT_MAX_COUNT : Int32 = 1_000_000
 
+pub const LT_MAX_RECEIVED : Int32 = 4_000_000
+
+pub const LT_MAX_SYMBOL_LEN : Int32 = 1048576
+
+pub const LT_MAX_TRIALS : Int32 = 10_000_000
+
+pub fn accepted_keys(String) -> Array[String]
+
+pub fn default_count(Int32) -> Int32
+
+pub fn default_count_overflow_msg(Int32) -> String
+
 pub fn encode_note(Int32) -> String
+
+pub fn explicit_count_overflow_msg(Int32) -> String
+
+pub fn guard_overhead(Int32, Double) -> String
+
+pub fn guard_symbol_len(Int32) -> String
+
+pub fn guard_trials(Int32) -> String
 
 pub fn join_ints(Array[Int32]) -> String
 
@@ -22,6 +42,8 @@ pub fn parse_seed_token(String) -> UInt64?
 
 pub fn symbol_free_note() -> String
 
+pub fn unknown_arg_error(Args, String) -> String
+
 // Errors
 
 // Types and methods
@@ -33,6 +55,8 @@ pub(all) enum ArgNum[T] {
 
 pub struct Args {
   map : Map[String, String]
+  positional : Array[String]
+  order : Array[String]
 }
 pub fn Args::double(Self, String) -> ArgNum[Double]
 pub fn Args::int(Self, String) -> ArgNum[Int32]

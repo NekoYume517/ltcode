@@ -133,6 +133,8 @@ pub(all) suberror LtError {
   TruncatedSymbol(Int32, Int32)
   BadMagic
   UnsupportedVersion(Int32, Int32)
+  InvalidHeaderField(String, UInt64, UInt64, UInt64)
+  TrailingBytes(UInt64, UInt64)
   CorruptionDetected(UInt64, UInt64)
 }
 
