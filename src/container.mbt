@@ -352,7 +352,7 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   let count_raw = r.u32_unsigned()
   let int32_max_u = 2147483647UL
   let body_len = 4UL + symbol_len_raw
-  let remaining = data.length().to_uint64() - header_len().to_uint64()
+  let remaining = (data.length().to_uint64()) - header_len().to_uint64()
   let count_max = remaining / body_len
   if count_raw > int32_max_u {
     raise LtError::InvalidHeaderField("count", count_raw, 0UL, count_max)
@@ -369,7 +369,39 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
     let body = r.bytes(symbol_len)
     symbols.push(ReceivedSymbol::{ index, data: body, })
   }
-  { k, seed, symbol_len, payload_len: payload_len.to_int(), payload_hash, c, delta, symbols, }
+  // 尾部校验（LT-D，2026-11-10 审计）：读完 count 个符号后必须**恰好**
+  // 用完文件。
+  //
+  // 修复前这里什么都不查，于是三种「这不是同一份文件」全都 exit 0 并打印
+  // 「checksum verified」：
+  //
+  //   cat good.ltc; printf JUNK... >> junk.ltc   → exit 0
+  //   cat good.ltc good.ltc > double.ltc         → exit 0
+  //   把 count 从 300 改成 2                     → exit 0
+  //
+  // 第三种是 `payload_hash` **明确抓不住**的一类：剩下的符号是完好的，
+  // 而哈希是对解出来的 payload 算的。README 里「能抓住拼接错误」那句话
+  // 因此在修复前不成立，已同步改写成如实描述。
+  //
+  // 与 `TruncatedSymbol` 是**两个方向**：截断是「读不到」，尾部多余是
+  // 「读完了还剩」。混进同一个变体会让调用方分不清该重传还是该丢弃。
+  let consumed = r.pos
+  if consumed != data.length() {
+    raise LtError::TrailingBytes(
+      consumed.to_uint64(),
+      data.length().to_uint64(),
+    )
+  }
+  {
+    k,
+    seed,
+    symbol_len,
+    payload_len: payload_len.to_int(),
+    payload_hash,
+    c,
+    delta,
+    symbols,
+  }
 }
 
 ///|
