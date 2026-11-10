@@ -244,6 +244,43 @@ pub fn encode_note(count : Int32) -> String {
 }
 
 ///|
+/// `encode` 没给 `--count` 时的默认值：`ceil(K × 1.5) + 1`。
+///
+/// 抽成函数有两个理由：
+/// 1. README 与 `--count 0` 那一节都引用了这个公式 —— 公式必须有**唯一**
+///    定义处，改一处就得改另一处。
+/// 2. K 很大时它会**撞上** LT_MAX_COUNT（LT-H1，2026-11-10 审计）：K=700000
+///    → 1050001 > 1_000_000。修复前那时用户会收到
+///    `--count must be <= 1000000 (got 1050001)`，而他**根本没传 --count**
+///    —— 报错把人指向一个不存在的输入。
+pub fn default_count(k : Int32) -> Int32 {
+  (k.to_double() * 1.5).to_int() + 1
+}
+
+///|
+/// **显式** `--count` 超限时的文案：那时"你写的这个值太大"是对的。
+pub fn explicit_count_overflow_msg(count : Int32) -> String {
+  "--count must be <= \{LT_MAX_COUNT} (got \{count}); split the payload or raise K instead"
+}
+
+///|
+/// **默认** count 触顶时的文案（LT-H1）：必须说清三件事 ——
+/// （a）这是默认值、（b）它是怎么算出来的、（c）下一步该怎么做。
+///
+/// 合并进 `explicit_count_overflow_msg` 是不行的：那两种情况的修法不同
+/// （改参数 vs **加**参数），一条含糊的话会让用户两条路都试一遍。
+///
+/// 返回空串 = 没触顶（与各 guard 同形状，调用点只管 `if !msg.is_empty()`）。
+pub fn default_count_overflow_msg(k : Int32) -> String {
+  let dc = default_count(k)
+  if dc > LT_MAX_COUNT {
+    "the default --count (ceil(1.5K)+1 = \{dc}) exceeds the limit of \{LT_MAX_COUNT}; no --count was given, so pass it explicitly (e.g. --count \{LT_MAX_COUNT}) or lower K"
+  } else {
+    ""
+  }
+}
+
+///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
 fn cmd_encode(args : Args) -> Unit {
   // LT-F：未知选项 / 位置参数先拒（笔误的键会让核对项静默失效）
@@ -281,9 +318,17 @@ fn cmd_encode(args : Args) -> Unit {
     }
     Some(v) => v
   }
-  // 默认 count = ceil(K * 1.5)：够本项目的默认参数成功，又不至于大得离谱
+  // 默认 count = ceil(K * 1.5)：够本项目的默认参数成功，又不至于大得离谱。
+  //
+  // LT-H1：默认值与 LC-1 的上限会在 K 很大时相撞。那种情况下必须说清
+  // 「这是默认值」—— 修复前直接复用显式分支的文案，于是用户收到
+  // `--count must be <= 1000000 (got 1050001)`，而他根本没传 --count。
+  let mut count_was_default = false
   let count = match args.int("count") {
-    Absent => (k.to_double() * 1.5).to_int() + 1
+    Absent => {
+      count_was_default = true
+      default_count(k)
+    }
     Invalid(raw) => {
       arg_error(num_error("--count", "an integer", raw))
       exit_usage()
@@ -300,7 +345,11 @@ fn cmd_encode(args : Args) -> Unit {
   // 上限拒绝而不是坐进无界分配。
   if count > LT_MAX_COUNT {
     arg_error(
-      "--count must be <= \{LT_MAX_COUNT} (got \{count}); split the payload or raise K instead",
+      if count_was_default {
+        default_count_overflow_msg(k)
+      } else {
+        explicit_count_overflow_msg(count)
+      },
     )
     exit_usage()
     return
