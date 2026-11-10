@@ -21,9 +21,33 @@ pub fn gf256_mul_peasant(a : Int, b : Int) -> Int
 约化多项式 `0x11B`（`x^8 + x^4 + x^3 + x + 1`，AES 用的那个）。
 exp/log 表由生成元 3 的连续幂**构造**，不硬编码 256 项。
 
+### 输入域（LT-E，2026-11-10 审计后明确）
+
+**四个运算的全部输入都按低 8 位解释**（`a & 0xFF`），与
+`gf256_mul_peasant` 完全一致。这条不是可选的实现细节：
+
+| 调用 | 结果 | 说明 |
+|---|---|---|
+| `gf256_mul(0x57, 0x83)` | `0xC1` | 域内，FIPS-197 锚点 |
+| `gf256_mul(256, 1)` | `0` | `256 & 0xFF = 0` |
+| `gf256_mul_peasant(256, 1)` | `0` | 一直如此 |
+| `gf256_inv(256)` | `None` | `inv(0)` |
+| `gf256_inv(257)` | `Some(1)` | `257 & 0xFF = 1` |
+| `gf256_pow(0xFF, 2000000000)` | `27` | 指数先归一，见下 |
+| `gf256_pow(3, -1)` | `246` | `= gf256_inv(3)`；负指数是逆元的幂 |
+| `gf256_pow(a, 0)` | `1` | 对任何 `a` 成立，含 `0` 与越界值 |
+
+`gf256_pow` 的指数先 `((n % 255) + 255) % 255` 归一到 `[0, 255)`，再算
+`((log[a] % 255) * (n % 255)) % 255`。修复前写的是 `exp[la * n % 255]`：
+`7 * 2000000000` 在 `Int32` 上溢出成负数，`% 255` 之后落在一个**不对应
+任何代数结论**的下标上 —— `0xFF^2000000000` 返回 244 而正确值是 27。
+这是**静默错值**，比 trap 危险。
+
 **验证**：全部 65536 对 `gf256_mul(a,b) == gf256_mul_peasant(a,b)`；
-`mul(0x57, 0x83) == 0xC1`（FIPS-197 §4.2）；
-`mul(a, inv(a)) == 1` 对全部 255 个非零 a。
+**外加越界域上的一致性**（19 个值含负数与 `Int32` 端点的 361 个组合，
+`src/gf256_domain_test.mbt`）；`mul(0x57, 0x83) == 0xC1`（FIPS-197 §4.2）；
+`mul(a, inv(a)) == 1` 对全部 255 个非零 a；`pow(a, -1) == inv(a)` 对全部
+255 个非零 a。参考值另由两套独立算法（逐次相乘 / 对数表）复算。
 
 ## 2. PRNG `src/rng.mbt`
 
@@ -268,6 +292,38 @@ pub(all) struct Container {
 pub fn unpack_container(data : Bytes) -> Container raise LtError
 ```
 
+### 头部的域校验（LT-A / LT-D / LT-G，2026-11-10 审计后加入）
+
+头里的每个字段都是**外部输入**，而 `K` / `symbol_len` / `count` 在文件里
+是无符号 u32、`payload_len` 是 u64，内部一律有符号 `Int32`。直接读取会
+变负或截断，而那些坏值不会当场崩 —— 它们让后续逻辑给出**误导性的业务
+状态**（最典型：`count = 0xFFFFFFFF` 变 −1 使符号全部被丢弃，解码于是
+报 `INCOMPLETE: missing K of K`，调用方会去补发符号）。
+
+因此 `unpack_container` 是这些校验的**唯一入口**，它按文件自身剩余字节
+判断（不需要任何外部信息）：
+
+| 字段 | 合法域 | 越界报 |
+|---|---|---|
+| `K` | `1 ..= 1<<20`（`max_source_symbols()`） | `InvalidHeaderField("K", …)` |
+| `symbol_len` | `1 ..= 文件长度` | `InvalidHeaderField("symbol_len", …)` |
+| `payload_len` | `0 ..= min(K × symbol_len, 2^31−1)` | `InvalidHeaderField("payload_len", …)` |
+| `count` | `0 ..= Int32 上限`，且 `<= 剩余字节 / (4 + symbol_len)` | 超 `Int32` → `InvalidHeaderField`；**仅**超出剩余容量 → `TruncatedSymbol` |
+| 尾部 | 读完 `count` 个符号后必须**恰好**用完文件 | `TrailingBytes(已消费, 总长)` |
+
+两点取舍值得说明：
+
+- `count` 的两层判断：超过 `Int32` 上限是「头部字段离谱」（那个值转
+  `Int32` 必变负），而仅超出剩余容量时更可能是**文件被截断** —— 后者对
+  调用方的动作指引是「重传」，因此复用 `TruncatedSymbol` 而不是把两者
+  混成一个。
+- `payload_len` 的上界要**同时**钳到 `2^31−1`：`reassemble` 与
+  `Container.payload_len` 都是有符号 `Int32`，不钳位就等于允许静默截断
+  （`u64(2^32+5).to_int() == 5`）。
+- `TrailingBytes` 与 `TruncatedSymbol` 是**两个方向**（读完还剩 / 读不到）。
+  追加垃圾、`cat a.ltc b.ltc`、把 `count` 改小，三条都靠它拦住；`payload_hash`
+  对第一、二种有可能通过，因此**结构自洽不能由内容哈希代劳**。
+
 字节布局（全部大端，v2）：
 
 ```
@@ -316,6 +372,14 @@ pub(all) suberror LtError {
   /// 解码“完成”但载荷哈希不符（实际, 期望）。**不能**降级为 Incomplete：
   /// 数据不够可以再要符号；哈希不符说明数据本身坏了，再要也没用。
   CorruptionDetected(UInt64, UInt64)
+  /// 容器头部字段超出可表示域（字段名, 实际值, 合法下界, 合法上界）。
+  /// 四元组而非二元组：同一个变体既要报「超上限」（count / symbol_len /
+  /// payload_len），也要报「低于下界」（K = 0），只说"超上限"会把后者描述错。
+  InvalidHeaderField(String, UInt64, UInt64, UInt64)
+  /// 尾部有多余字节（已消费字节数, 文件总长）。与 TruncatedSymbol 是
+  /// **两个方向**：截断是"读不到"，尾部多余是"读完了还剩"。混成一个变体
+  /// 会让调用方分不清该重传还是该丢弃。
+  TrailingBytes(UInt64, UInt64)
 } derive(Eq, Debug)
 
 pub fn error_text(e : LtError) -> String
@@ -331,19 +395,24 @@ pub fn error_text(e : LtError) -> String
 | 文件短于头部 / 符号体不全 | `TruncatedSymbol` | `truncated symbol: got N bytes, expected M` | 同左 |
 | 魔数不是 `LTC2` | `BadMagic` | `bad magic` | `not a ltcode container: bad magic` |
 | 版本号本构建不支持 | `UnsupportedVersion(found, supported)` | `unsupported container version F, this build supports S` | 同左 |
+| 头部字段越界 | `InvalidHeaderField(name, v, lo, hi)` | `invalid container header: NAME=V exceeds the maximum HI`（下界方向是 `... is below the minimum LO`） | 同左 |
+| 读完符号后仍有多余字节 | `TrailingBytes(used, total)` | `trailing bytes after the last symbol: USED bytes consumed of TOTAL; this is not the same file that was packed` | 同左 |
 
-三者对调用方的**动作指引**不同：截断 → 重传这批数据；魔数不符 → 换一个
-正确的文件；版本不符 → 换版本或升级本构建。旧实现把前两者都并进
-`TruncatedSymbol`，把版本不符并进 `SourceTooLarge`（于是输出
+五者对调用方的**动作指引**不同：截断 / 尾部多余 → 重传或该丢弃这批数据；
+魔数不符 → 换一个正确的文件；版本不符 → 换版本或升级本构建；头部字段
+越界 → 这个文件不该被本构建读。旧实现把前三者混进了两个不相干的变体
+（魔数并进 `TruncatedSymbol`，版本并进 `SourceTooLarge`，于是输出
 "source too large: K=3 exceeds the limit of 2"，一个版本号被当成源符号数）。
+LT-G 又修了一次同类错位：`K` 变负曾报 `empty source`（把"头部字段非法"
+说成"输入为空"）。
 
 `BadMagic` 的文本**不带** `not a ltcode container:` 前缀：`cmd_decode` 已经
 加了那一段，重复会让实际输出变成两个前缀叠在一起。
 
-退出码映射：`CorruptionDetected` 走 **3**（输入错误），不是 **1**。
-理由：退出码 1 的语义是“还差几个符号，再给我一些就能解”（调用方的正常
-控制流），而 `CorruptionDetected` 是“这批数据不可用”（调用方应该丢弃并
-重新接收），两者对调用方的动作指引不同。
+退出码映射：`CorruptionDetected` / `InvalidHeaderField` / `TrailingBytes`
+一律走 **3**（输入错误），不是 **1**。理由：退出码 1 的语义是“还差几个
+符号，再给我一些就能解”（调用方的正常控制流），而这三者是“这批数据
+不可用”（调用方应该丢弃并重新接收），两者对调用方的动作指引不同。
 
 ## 10. CLI `cmd/ltcode`
 
@@ -362,6 +431,67 @@ ltcode distcmp  --symbols K --overhead O --trials T [--seed S]
 （不一致报用法错误），不给就从文件读。这样"解码只需要这个文件"是真的。
 
 所有命令的 `--seed` 默认 `0x4C54434F4445`（固定常数，不是时钟）。
+
+### 只接受命名参数（LT-F）
+
+每个参数都必须是显式命名的 `--option value` / `--option=value`。
+**未知选项与位置参数一律是用法错误**（exit 2），报错回显原始 token：
+
+```moonbit
+pub fn accepted_keys(cmd : String) -> Array[String]
+pub fn unknown_arg_error(args : Args, cmd : String) -> String   // 空串 = 干净
+```
+
+| 子命令 | 接受的键 |
+|---|---|
+| `encode` | `input symbols seed count out` |
+| `decode` | `input out symbols seed` |
+| `simulate` / `distcmp` | `symbols overhead trials seed symbol-len` |
+| `curve` | `symbols overheads trials seed symbol-len` |
+| `help` | （无） |
+
+理由不是洁癖：`decode` 的 `--symbols` / `--seed` 是**可选核对项**，一个笔误
+的键（`--seed` → `--seedx`）若被静默忽略，命令仍然打印
+`decoded OK ... (checksum verified)` —— 用户以为核对过了。修复前实测
+`--seedx 999999` 与尾随的 `some-junk` 都是 exit 0。
+
+`parse_args` 因此同时记 `positional`（原位 token）与 `order`（**按 argv
+顺序**的键名，报错顺序稳定）。数值形态不受影响：`--seed 0x...`、
+`--trials -5`（负数是**值**）、`--overheads 1.0,1.1`、`--symbol-len 40`
+全部照旧通过。
+
+### 度量参数的量级上限（LT-B）
+
+`simulate` / `curve` / `distcmp` 的三个参数直接决定循环次数或每次迭代的
+分配量，超限一律 exit 2 并写明上限：
+
+```moonbit
+pub const LT_MAX_TRIALS      : Int32 = 10_000_000
+pub const LT_MAX_RECEIVED    : Int32 = 4_000_000
+pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
+
+pub fn guard_trials(trials : Int32) -> String                       // 空串 = 放行
+pub fn guard_overhead(k : Int32, overhead : Double) -> String
+pub fn guard_symbol_len(symbol_len : Int32) -> String
+```
+
+`guard_overhead` 的守卫量是 **`K × overhead`（收到的符号数）**，不是
+overhead 本身 —— 同一个 overhead 在 K=10 时无害、K=1<<20 时致命。它也显式
+挡 `nan` / `inf`（`nan > 上限` 为 false，会静默放行）。
+
+修复前这四处都是挂死（实测 40~60 秒不终止，非报错、非退出）：`--overhead
+2500000`、`--overhead 1e300`、`--trials 2147483647`、`--symbol-len
+2000000000`。根因是 `received_count` 的 `.to_int()` 对 2.5e9 与 1e300 都
+**饱和**到 `2147483647`，随后进入 21 亿次的逐符号编码循环。
+
+`encode --count` 的默认值 `ceil(1.5K)+1` 也会触顶（K=700000 → 1050001
+> `LT_MAX_COUNT`）。那处用独立文案说明「**这是默认值**，你没传 --count」：
+
+```moonbit
+pub fn default_count(k : Int32) -> Int32
+pub fn default_count_overflow_msg(k : Int32) -> String   // 空串 = 没触顶
+pub fn explicit_count_overflow_msg(count : Int32) -> String
+```
 
 `encode --count 0` 是**合法但无意义**的组合：产出只有 43 字节头部、0 个编码
 符号的容器（`entropy=0` 的合法容器），`decode` 对它如实报

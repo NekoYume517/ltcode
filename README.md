@@ -143,6 +143,30 @@ out: out.bin
 
 `out.bin` 与 `examples/payload.bin` 的 SHA-256 相同（逐字节还原）。
 
+### 参数规则：每个参数都要有名字
+
+所有参数都是显式命名的 `--option value`（或 `--option=value`）形态。
+**位置参数与未知选项一律是用法错误**（退出码 2），并且报错回显原始 token：
+
+```
+$ ltcode decode --input a.ltc --out b.bin --seedx 999999
+ltcode: unknown option '--seedx' for decode; run 'ltcode help' for the accepted options
+$ echo $?
+2
+
+$ ltcode decode --input a.ltc --out b.bin some-junk
+ltcode: unexpected positional argument 'some-junk'; every argument to decode must be a named --option
+$ echo $?
+2
+```
+
+这条规则存在的**理由**不是洁癖：`decode` 的 `--symbols` / `--seed` 是
+**可选核对项**。一个笔误的键（`--seed` 写成 `--seedx`）如果被静默忽略，
+命令依然会打印 `decoded OK ... (checksum verified)` —— 用户以为核对过了，
+其实那个参数根本没被读。多写的 token 去哪了必须当场说清，否则"手动核对"
+就变成"看起来核对过"。各子命令接受的键写在 `accepted_keys`
+（`cmd/ltcode/main.mbt`），一眼可查。
+
 数据不足时**如实报缺**，并以退出码 1 结束：
 
 ```
@@ -213,11 +237,19 @@ $ echo $?
 冗余可以交叉验证。方程组自己发现不了这件事。
 
 所以容器头里带一个 `payload_hash`（FNV-1a 64），解码后重算并比对，
-不一致就拒绝输出：
+不一致就拒绝输出。
 
-```bash
-$ # 把 payload.ltc 里第 32 个符号（度为 1）的第一个字节翻转
-$ moon run cmd/ltcode -- decode --input examples/corrupt.ltc --out corrupt.out
+`examples/corrupt.ltc` **不是仓库里的文件**：仓库只提交 `payload.bin` /
+`payload.ltc` / `tight.ltc` 与往返产物。损坏样本是演示时**手工生成**的
+中间产物 —— 复制 `payload.ltc`，按下面的 `ReadAllBytes` / 翻转 / 写回三行
+把第 32 个符号（度为 1）的首字节改掉，写到临时路径即可复现：
+
+```powershell
+$ $bytes = [System.IO.File]::ReadAllBytes("$PWD\examples\payload.ltc")
+$ $bytes[1455] = $bytes[1455] -bxor 0xFF      # 第 32 个符号的首字节
+$ [System.IO.File]::WriteAllBytes("$PWD\expr\corrupt.ltc", $bytes)
+
+$ moon run cmd/ltcode -- decode --input expr/corrupt.ltc --out corrupt.out
 ltcode: decoded payload FAILED checksum: got 0x354f7a617b24837d, expected 0x408f149e6f4ea445
   this means the received symbols were corrupted or mixed from another encoding
   the decoded bytes were NOT written to disk
@@ -225,11 +257,22 @@ $ echo $?
 3
 ```
 
+完整的生成步骤（含偏移为什么是 1455）见 [docs/DEMO.md](docs/DEMO.md) §3b。
+
 **文件没有写出来。** 这是 PLAN §9 "成功时逐字节校验"的实现：校验不是
 可选的后处理，而是 `Complete` 的定义的一部分。
 
 > 注意这个哈希**不抗主动攻击** —— 它能抓住意外损坏（改字节、截断、
-> 把两批符号混在一起），抓不住有人故意构造碰撞。本项目不声称防水篡改。
+> 把内容与头部字段错配），抓不住有人故意构造碰撞。本项目不声称防水篡改。
+>
+> **「拼接错误」不是这个哈希负责的**：把一个容器的头与另一个容器的符号体
+> 拼在一起，`payload_hash` 有可能仍然通过（解出来的 payload 也许就是对的
+> —— 符号完好的话）。这类「文件结构不自洽」由容器层负责：读完 `count` 个
+> 符号后必须**恰好**用完文件，否则报
+> `trailing bytes after the last symbol: N bytes consumed of M`、退出码 3。
+> 追加垃圾、`cat a.ltc b.ltc`、把 `count` 改小，三条都实测被这一步拦住
+> （`src/trailing_guard_test.mbt` 锁定）。两层各管一件事：哈希管**内容**，
+> 尾部校验管**结构**。
 
 ### 度量
 

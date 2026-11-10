@@ -91,14 +91,16 @@ missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,
 裸 LT 的陷阱：篡改一个**度为 1** 的符号后，剥皮仍可能报 `Complete`，
 但解出来的源符号有错。所以容器带 `payload_hash`，解码后重算比对。
 
-`payload.ltc` 里第 32 个符号是度为 1 的（文件偏移 1455 处是它的首字节）：
+`payload.ltc` 里第 32 个符号是度为 1 的（文件偏移 1455 处是它的首字节）。
+`corrupt.ltc` **不是仓库里的文件**，是演示时按下面三行手工生成的中间产物
+（生成到 `expr/`，不污染 `examples/` 里的正式样本）：
 
 ```powershell
 $ $bytes = [System.IO.File]::ReadAllBytes("$PWD\examples\payload.ltc")
 $ $bytes[1455] = $bytes[1455] -bxor 0xFF
-$ [System.IO.File]::WriteAllBytes("$PWD\examples\corrupt.ltc", $bytes)
+$ [System.IO.File]::WriteAllBytes("$PWD\expr\corrupt.ltc", $bytes)
 
-$ moon run cmd/ltcode -- decode --input examples/corrupt.ltc --out corrupt.out
+$ moon run cmd/ltcode -- decode --input expr/corrupt.ltc --out corrupt.out
 ltcode: decoded payload FAILED checksum: got 0x354f7a617b24837d,
                                             expected 0x408f149e6f4ea445
   this means the received symbols were corrupted or mixed from another encoding
@@ -110,10 +112,17 @@ ltcode: decoded payload FAILED checksum: got 0x354f7a617b24837d,
 ### 反例：改一个度 > 1 的符号，解码反而正确
 
 ```powershell
+$ # 重新读一份干净样本（不依赖上一节留下的 $bytes 状态），只改第 60 字节
+$ $bytes = [System.IO.File]::ReadAllBytes("$PWD\examples\payload.ltc")
 $ $bytes[60] = $bytes[60] -bxor 0xFF   # 第 60 字节属于一个度 > 1 的符号
-$ moon run cmd/ltcode -- decode --input examples/corrupt2.ltc --out ok.out
+$ [System.IO.File]::WriteAllBytes("$PWD\expr\corrupt2.ltc", $bytes)
+$ moon run cmd/ltcode -- decode --input expr/corrupt2.ltc --out ok.out
 decoded OK: K=100 symbols=300 payload=4000 bytes (checksum verified)
 ```
+
+> 注意**只改第 60 个字节**。若在上一节的 `corrupt.ltc` 基础上再改（即 1455
+> 与 60 两处都被翻转），校验和会失败 —— 那说明两处损坏叠加已超出冗余的
+> 纠错能力，不是本反例要展示的情形（实测：两处同时翻转 → exit 3）。
 
 这**不是**校验和失灵：LT 有冗余，一个被改坏的度 > 1 符号变成一条错误
 方程，但剩余方程足够，剥皮解出的仍是**正确**的全部源符号。实测
