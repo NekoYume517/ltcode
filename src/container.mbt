@@ -128,9 +128,11 @@ priv struct Reader {
 }
 
 ///|
+/// 读一个大端 u32。长度检查同样用「剩余字节」形式（见 `Reader::bytes`）。
 fn Reader::u32(self : Reader) -> Int32 raise LtError {
-  if self.pos + 4 > self.data.length() {
-    raise LtError::TruncatedSymbol(self.data.length(), self.pos + 4)
+  let remaining = self.data.length() - self.pos
+  if 4 > remaining {
+    raise LtError::TruncatedSymbol(remaining, 4)
   }
   let mut v = 0
   for i = 0; i < 4; i = i + 1 {
@@ -142,8 +144,9 @@ fn Reader::u32(self : Reader) -> Int32 raise LtError {
 
 ///|
 fn Reader::u64(self : Reader) -> UInt64 raise LtError {
-  if self.pos + 8 > self.data.length() {
-    raise LtError::TruncatedSymbol(self.data.length(), self.pos + 8)
+  let remaining = self.data.length() - self.pos
+  if 8 > remaining {
+    raise LtError::TruncatedSymbol(remaining, 8)
   }
   let mut v = 0UL
   for i = 0; i < 8; i = i + 1 {
@@ -155,8 +158,9 @@ fn Reader::u64(self : Reader) -> UInt64 raise LtError {
 
 ///|
 fn Reader::byte(self : Reader) -> Int32 raise LtError {
-  if self.pos + 1 > self.data.length() {
-    raise LtError::TruncatedSymbol(self.data.length(), self.pos + 1)
+  let remaining = self.data.length() - self.pos
+  if 1 > remaining {
+    raise LtError::TruncatedSymbol(remaining, 1)
   }
   let v = self.data[self.pos].to_int() & 0xFF
   self.pos = self.pos + 1
@@ -164,9 +168,26 @@ fn Reader::byte(self : Reader) -> Int32 raise LtError {
 }
 
 ///|
+/// 读 `n` 个字节。
+///
+/// **长度检查必须先算差再比**（LT-C，2026-11-10 审计）：
+///
+/// ```moonbit nocheck
+/// if n < 0 || self.pos + n > self.data.length()   // ❌ 回绕
+/// ```
+///
+/// `pos = 47`、`n = 0x7FFFFFFF` 时 `pos + n` 在 Int32 上溢出成负数，
+/// 比较恒为 false，检查被绕过 → `FixedArray::make(2^31-1)` → `PanicError`
+/// （native 退出码 -1073740791 / 0xC0000409）。
+///
+/// 改成 `n > self.data.length() - self.pos`：右边在 `pos <= length()`
+/// 时恒非负且不超过 `Int32` 上限，比较不会回绕。`n < 0` 单独留着，因为
+/// 负 `n` 让这个比较为 false。报错携带的也是**剩余 / 请求**两个量，
+/// 不用 `pos + n`，免得在报错路径上再溢出一次。
 fn Reader::bytes(self : Reader, n : Int32) -> Bytes raise LtError {
-  if n < 0 || self.pos + n > self.data.length() {
-    raise LtError::TruncatedSymbol(self.data.length(), self.pos + n)
+  let remaining = self.data.length() - self.pos
+  if n < 0 || n > remaining {
+    raise LtError::TruncatedSymbol(remaining, n)
   }
   let out : FixedArray[Byte] = FixedArray::make(n, b'\x00')
   for i = 0; i < n; i = i + 1 {
