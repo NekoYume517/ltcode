@@ -42,6 +42,8 @@ pub fn parse_seed_token(String) -> UInt64?
 
 pub fn symbol_free_note() -> String
 
+pub fn symbols_bound_msg(Int32) -> String
+
 pub fn unknown_arg_error(Args, String) -> String
 
 // Errors
