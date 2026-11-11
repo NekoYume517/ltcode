@@ -491,7 +491,14 @@ overhead 本身 —— 同一个 overhead 在 K=10 时无害、K=1<<20 时致命
 pub fn default_count(k : Int32) -> Int32
 pub fn default_count_overflow_msg(k : Int32) -> String   // 空串 = 没触顶
 pub fn explicit_count_overflow_msg(count : Int32) -> String
+pub fn symbols_bound_msg(k : Int32) -> String            // 空串 = 放行
 ```
+
+`default_count` 是 `(3K+1)/2 + 1`（即 `ceil(1.5K)+1`，整数算式，K 为奇数时
+不靠浮点截断）。`--symbols` 与 `--count` 同域：两者越界都是**用法错误**
+（exit 2），`symbols_bound_msg` 的文案点名 `--symbols` 与上界
+`max_source_symbols()`（1<<20），不再把话推到「切不开输入」上
+（2026-11-11 审计，LT-K）。
 
 `encode --count 0` 是**合法但无意义**的组合：产出只有 43 字节头部、0 个编码
 符号的容器（`entropy=0` 的合法容器），`decode` 对它如实报
@@ -499,6 +506,14 @@ pub fn explicit_count_overflow_msg(count : Int32) -> String
 （可再补符号后解码），拒绝它会让"先建容器、后按需补符号"的用法无处落脚；
 但别把它当"空文件编码" —— 空输入早在 `SourceBlock::from_bytes` 就被
 `EmptySource` 拒掉了。
+
+`unpack_container` 对 `symbol_len` 的域校验只看字段自身
+（`1 <= symbol_len <= Int32.MAX`），**不再**用「文件总长度」当上界：零符号
+容器没有符号体，43 字节的头部长度会把 `symbol_len > 43` 的合法头部判死
+（对 4000 字节 payload 即 K <= 93），于是编码端写得出、解码端读不回。
+「不许为符号体做超长分配」由 `count` 一侧的剩余字节检查负责：每个符号占
+`4 + symbol_len` 字节，`count >= 1` 时必然被卡住，`count == 0` 时不读任何
+符号体。回归见 `count_zero_symbol_len_test.mbt`（2026-11-11 审计，LT-I）。
 
 ### 数值参数的三态与报错
 

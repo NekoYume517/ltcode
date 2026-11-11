@@ -15,7 +15,7 @@ $ moon check
 # (0 errors)
 
 $ moon test
-Total tests: 149, passed: 149, failed: 0.
+Total tests: 154, passed: 154, failed: 0.
 
 $ moon fmt --check
 Finished. moon: ran 22 tasks, now up to date

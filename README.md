@@ -209,6 +209,15 @@ $ echo $?
 **这个容器只能解码失败**，而且失败方式是如实的 `Incomplete`（缺全部 K 个
 源符号），退出码 1 —— 不是损坏、不是错误、不是"看起来成功的文件"。
 
+> 上面这段输出**曾经是假的**（2026-11-11 审计修掉）：解码端把 `symbol_len`
+> 的上界取成了「整个文件的长度」，零符号容器只有 43 字节头部，于是
+> `symbol_len > 43` 的合法头部全被判死 —— 对 4000 字节的 payload 就是
+> **K <= 93**，恰好覆盖这个特性的全部实际用法。当时同样的命令得到的是
+> `not a ltcode container: symbol_len=400 exceeds the maximum 43`、退出码 3。
+> 上界现在只由字段自身的域决定（`count` 那边用剩余字节数卡分配），
+> `--count 0` 对任意 K 都按本节描述工作；回归见
+> `count_zero_symbol_len_test.mbt`。
+
 为什么保留而不改成退出码 2：
 
 - `0` 是一个**良定义的下界**，不是"非法输入"的近似写法。
@@ -339,12 +348,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 149 tests, all pass
+moon test             # 154 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（149 条，按 `^test "` 计数）：
+测试分布（154 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -358,6 +367,7 @@ moon build --target wasm
 | `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
 | `header_guard_test.mbt` | 7 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计） |
+| `count_zero_symbol_len_test.mbt` | 4 | 零符号容器的 `symbol_len` 域（43 字节边界两侧）、K=93/94、`symbol_len` 与 payload 长短无关（2026-11-11 审计） |
 | `trailing_guard_test.mbt` | 5 | 尾部多余字节（追加垃圾 / 拼接容器）必须报错 |
 | `k_field_test.mbt` | 6 | 头部 K 字段域校验与独立文案 |
 | `overflow_guard_test.mbt` | 3 | 头部字段越界走分类错误而非 panic |
@@ -366,7 +376,8 @@ moon build --target wasm
 | `inconsistent_test.mbt` | 2 | `DecodeStats.inconsistent` 结构性恒 0 的护栏 |
 | `cli_test.mbt` | 14 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
 | `unknown_flag_test.mbt` | 7 | 未知 `--flag` 与位置参数报用法错误 |
-| `default_count_test.mbt` | 5 | 默认 `--count` 触顶时说明「默认值超限」 |
+| `default_count_test.mbt` | 5 | 默认 `--count` 是 `ceil(1.5K)+1`（含奇数 K 的分水岭）、触顶时说明「默认值超限」 |
+| `symbols_bound_test.mbt` | 1 | `--symbols` 上界在用法层判、文案点名 `--symbols` 而非输入文件（2026-11-11 审计） |
 | `count_guard_test.mbt` | 1 | `--count` 上限常量与语义（LC-1） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
