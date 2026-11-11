@@ -35,8 +35,19 @@ test "LT-H1: default_count is ceil(1.5K) + 1" {
   inspect(@ltcode.default_count(100), content="151")
   inspect(@ltcode.default_count(1000), content="1501")
   inspect(@ltcode.default_count(4), content="7") // 6 + 1
-  // K=1 时下限也成立
-  inspect(@ltcode.default_count(1), content="2")
+  // K=1 时下限也成立：ceil(1.5) + 1 = 3
+  inspect(@ltcode.default_count(1), content="3")
+  // **奇数 K 是 floor 与 ceil 的分水岭**（LT-J，2026-11-11 审计）：
+  // 1.5K 落在 .5 上时，旧实现 `(k.to_double() * 1.5).to_int()` 截断成
+  // floor，于是 K=3 → 5（而 ceil 是 6）、K=7 → 11（ceil 是 12）。
+  // 偶数 K 两种算法一致，所以旧测试里 K=10/100/1000/4 全都是绿的 ——
+  // 只有 K=1 一条踩到了边界，却也被写成 `content="2"`（floor 的值），
+  // 于是「测试名说 ceil、断言锁 floor」这个矛盾被锁了整整一轮。
+  inspect(@ltcode.default_count(3), content="6") // ceil(4.5) + 1
+  inspect(@ltcode.default_count(7), content="12") // ceil(10.5) + 1
+  inspect(@ltcode.default_count(9), content="15") // ceil(13.5) + 1
+  // 三组数据都不能只靠浮点乘：整数算式 `(3K+1)/2 + 1` 在域内不会溢出
+  inspect(@ltcode.default_count(1048576), content="1572865") // ceil(1.5·2^20)+1
 }
 
 ///|

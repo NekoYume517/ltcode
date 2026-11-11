@@ -253,8 +253,17 @@ pub fn encode_note(count : Int32) -> String {
 ///    → 1050001 > 1_000_000。修复前那时用户会收到
 ///    `--count must be <= 1000000 (got 1050001)`，而他**根本没传 --count**
 ///    —— 报错把人指向一个不存在的输入。
+///
+/// 用整数算式 `(3K+1)/2 + 1` 而不是 `(k.to_double() * 1.5).to_int() + 1`
+/// （LT-J，2026-11-11 审计）：后者是 **floor**，只在 K 为偶数时与 ceil 重合；
+/// K 为奇数时 1.5K 落在 .5 上被截断，K=3 给出 5（应为 6）、K=7 给出 11
+/// （应为 12）、K=1 给出 2（应为 3）。而 README / API.md / 本函数的文档与
+/// `default_count_test.mbt` 的测试名全都写的是 `ceil(1.5K)+1`，测试里那条
+/// `default_count(1) == 2` 又把 floor 的值锁死了 —— 代码、文档、测试名三者
+/// 互相矛盾，谁也没发现。整数算式在 `K ∈ [1, 2^20]` 内不会溢出，也不引入
+/// 浮点边界。
 pub fn default_count(k : Int32) -> Int32 {
-  (k.to_double() * 1.5).to_int() + 1
+  (k * 3 + 1) / 2 + 1
 }
 
 ///|
@@ -279,6 +288,7 @@ pub fn default_count_overflow_msg(k : Int32) -> String {
     ""
   }
 }
+
 
 ///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
@@ -310,6 +320,7 @@ fn cmd_encode(args : Args) -> Unit {
     exit_usage()
     return
   }
+
   let out_path = args.str("out").unwrap_or("\{input}.ltc")
   let seed = match opt_seed(args) {
     None => {
