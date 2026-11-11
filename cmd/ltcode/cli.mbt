@@ -289,6 +289,31 @@ pub fn default_count_overflow_msg(k : Int32) -> String {
   }
 }
 
+///|
+/// `--symbols` 的上界守卫（LT-K，2026-11-11 审计）。
+///
+/// 修复前 `--symbols` 只判了下界（`>= 1`），上界留给
+/// `SourceBlock::from_bytes` 里的 `SourceTooLarge`：
+///
+/// ```
+/// ltcode: cannot split input: source too large:
+///         K=2147483647 exceeds the limit of 1048576 source symbols
+/// exit 3
+/// ```
+///
+/// 两个毛病：退出码按「输入非法」（3）报，而这是**用法错误**（2）——
+/// `--count` 越界就是按 2 报的，同一个域的两个参数走了两条路；文案把话
+/// 推到「切不开输入」上，读起来像 `--input` 有问题，而该改的是 `--symbols`。
+///
+/// 与其它 guard 同形状：空串 = 没越界，调用方只管 `if !msg.is_empty()`。
+pub fn symbols_bound_msg(k : Int32) -> String {
+  let limit = @lib.max_source_symbols()
+  if k > limit {
+    "--symbols must be <= \{limit} (got \{k}); split the file into several parts and encode them separately"
+  } else {
+    ""
+  }
+}
 
 ///|
 /// `encode`：读文件 → 切块 → 编码 N 个符号 → 写自描述容器。
@@ -320,7 +345,14 @@ fn cmd_encode(args : Args) -> Unit {
     exit_usage()
     return
   }
-
+  // LT-K：上界也在用法层判，别让 `SourceBlock::from_bytes` 用「切不开输入」
+  // 的文案 + 退出码 3 去说一个用法错误。
+  let k_over = symbols_bound_msg(k)
+  if !k_over.is_empty() {
+    arg_error(k_over)
+    exit_usage()
+    return
+  }
   let out_path = args.str("out").unwrap_or("\{input}.ltc")
   let seed = match opt_seed(args) {
     None => {
