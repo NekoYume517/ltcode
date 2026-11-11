@@ -331,19 +331,49 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   }
   let k = k_raw.to_int()
   let seed = r.u64()
-  // symbol_len：同样按无符号验证。上界取「一个符号体不可能比整个文件还长」。
+  // symbol_len：按无符号读，域校验只用字段自身的取值范围（LT-I，
+  // 2026-11-11 审计）。
+  //
+  // 修复前上界取的是「文件总长」：
+  //
+  // ```moonbit nocheck
+  // let symbol_len_max = data.length().to_uint64()   // count=0 时恒为 43
+  // ```
+  //
+  // 这条约束本意是「一个符号体不可能比整个文件还长」，但它只对**带符号体**
+  // 的文件成立。`--count 0` 写出的零符号容器只有 43 字节头部，于是上界退化成
+  // 「`symbol_len <= 43`」，把 `ceil(payload/K) > 43` 的合法头部全部判死
+  // —— 对 README 用的 4000 字节 payload 就是 **K <= 93**。编码端与解码端对
+  // 「同一个文件是否合法」给出相反答案，而 README 的 `--count 0` 例子恰好
+  // 落在被拒的一侧（K=10 → symbol_len=400）：文档承诺 INCOMPLETE/exit 1，
+  // 实际 exit 3「not a ltcode container」。
+  //
+  // 正确的域只由**字段自身**决定：`1 <= symbol_len <= Int32.MAX`。
+  //
+  // 为什么「不超过文件长度」这条不该留：它想防的是「一个符号体比整个文件还
+  // 长」，而真正需要防的**分配**由下面的 `count_max` 负责 —— 每个符号占
+  // `4 + symbol_len` 字节，`count_max = 剩余字节 / body_len` 一旦取 0，
+  // 任何 `count >= 1` 都会报 `TruncatedSymbol`。`count == 0` 时一个符号体
+  // 都不读，`peel` 的 `acc` 也只在收到符号时按 `symbol_len` 分配（`n == 0`
+  // → 一次都不分配），因此不存在「头部声明了巨长的符号体就炸内存」的路径。
+  // 反过来，`payload_len == 0` 这种格式允许、但 `from_bytes` 不会产出的
+  // 头部（`header_guard_test.mbt` 已锁定）本来就要求 `symbol_len >= 1` 与
+  // `payload_len` 无关。
+  //
+  // 两个方向的域校验都保留：`0` 和 `0x80000000`（会转成负数）仍然拒绝 ——
+  // 放宽上界不等于取消域。
   let symbol_len_raw = r.u32_unsigned()
-  let symbol_len_max = data.length().to_uint64()
-  if symbol_len_raw < 1UL || symbol_len_raw > symbol_len_max {
+  let payload_len = r.u64()
+  let int32_max_u = 2147483647UL
+  if symbol_len_raw < 1UL || symbol_len_raw > int32_max_u {
     raise LtError::InvalidHeaderField(
-      "symbol_len", symbol_len_raw, 1UL, symbol_len_max,
+      "symbol_len", symbol_len_raw, 1UL, int32_max_u,
     )
   }
   let symbol_len = symbol_len_raw.to_int()
   // payload_len：u64。合法上界受两个约束——`K × symbol_len`（`from_bytes`
   // 切块后的最大长度），以及 `Int32` 正数上限（`reassemble` 与
   // `Container.payload_len` 都用有符号 Int32，超出必须报错而不是截断）。
-  let payload_len = r.u64()
   let mut payload_len_max = k_raw * symbol_len_raw
   let int32_max = 2147483647UL
   if payload_len_max > int32_max {
