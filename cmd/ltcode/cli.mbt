@@ -244,6 +244,89 @@ pub fn encode_note(count : Int32) -> String {
 }
 
 ///|
+/// `encode` 末尾可解性验算的**数量闸门**（LT1，2026-11-12 followup）。
+///
+/// 为什么需要验算：默认 `--count = ceil(1.5K)+1` 这个倍数对小 K **不保证**
+/// 可解（剥皮需要的度 1 符号数由 `ln(K/δ)·√K` 决定，与 K 不成正比）。实测
+/// K=10 + 默认 16 符号：默认种子能解，`--seed 3` 就报
+/// `INCOMPLETE: missing 6 of 10`。也就是说 `encode` 可以写出**自己读不出来**
+/// 的容器而一声不吭 —— 用户无法判断是参数问题还是实现问题。
+///
+/// 为什么必须有闸门：验算就是「用同一个解码器再解一遍」，成本与编码**同量级**
+/// （同一个 `count × 平均度数 × symbol_len` 的 XOR 量）。无条件下验算等于让
+/// 每次 `encode` 慢一倍，而收益只是一行提示。因此只在 `count <= 4096` 时做：
+///
+/// - 它覆盖默认 count 在 `K <= 2730` 时的全部取值（`default_count(2730) = 4096`）；
+/// - 本项目的定位是「K 至多数千」，README 的实测曲线都在这个区间；
+/// - 超阈值**跳过并且什么都不打印** —— 这正是 best-effort 的含义：没打印
+///   ≠ 已验证可解。README「可解性验算」一节与 `help` 都写明了这条边界。
+pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
+
+///|
+/// 该不该做末尾验算。`count == 0` 一律不验算：那时走 `encode_note` 的零符号
+/// 提示，两条提示**不会同时出现**（`cmd_encode` 里是 `if ... else if ...`）。
+pub fn should_verify_solvability(count : Int32) -> Bool {
+  count >= 1 && count <= LT_VERIFY_MAX_COUNT
+}
+
+///|
+/// 解不出时那一行提示。`missing <= 0` 返回空串（与各 guard / `encode_note`
+/// 同形状：调用点只管 `if !msg.is_empty()`）。
+///
+/// 措辞里必须同时有**缺几个**、**当前 count**、**默认值来源**与**下一步**：
+/// 只说"解不出来"会让用户以为是实现缺陷，只说"加大 --count"则说不清该加到
+/// 多少（默认值是怎么来的）。
+pub fn solvability_note(k : Int32, count : Int32, missing : Int32) -> String {
+  if missing <= 0 {
+    ""
+  } else {
+    "note: these \{count} symbols cannot recover all \{k} source symbols (\{missing} missing); decode will report INCOMPLETE - raise --count (the default is ceil(1.5K)+1)"
+  }
+}
+
+///|
+/// 用**解码器本身**试解这批符号，返回该说的话（空串 = 什么都不用说）。
+///
+/// 不新写一份剥皮：`decode_full` 与 `decode` 走同一条路径，「encode 写出的
+/// 容器能不能被自己读回」这件事只能由那一条路径回答 —— 另写一份判据，
+/// 迟早两边对同一个文件给出相反答案（正是 16.2-2 那个缺陷的形态）。
+///
+/// 解码抛错时返回空串而不是报错：这条验算是**提示**，它自己出错不该改变
+/// `encode` 的结论（容器已经写好、退出码仍是 0）。
+///
+/// **私有**（不 `pub`）：调用方只有 `cmd_encode` 与白盒测试。公开它会让 CLI
+/// 包的公开接口凭空多出一个 `@src.Symbol` 类型依赖；而外面若想验算，应该
+/// 直接用库里的 `decode_full` —— 那才是唯一的判据来源。
+fn verify_solvability(
+  seed : UInt64,
+  k : Int32,
+  symbol_len : Int32,
+  symbols : Array[@lib.Symbol],
+) -> String raise @lib.LtError {
+  let count = symbols.length()
+  if !should_verify_solvability(count) {
+    return ""
+  }
+  let received : Array[@lib.ReceivedSymbol] = []
+  for s in symbols {
+    received.push(@lib.ReceivedSymbol::{ index: s.index, data: s.data, })
+  }
+  let missing = match
+    @lib.decode_full(
+      seed,
+      k,
+      symbol_len,
+      received,
+      @lib.default_c(),
+      @lib.default_delta(),
+    ) {
+    @lib.Complete(_) => 0
+    @lib.Incomplete(_, missing) => missing.length()
+  }
+  solvability_note(k, count, missing)
+}
+
+///|
 /// `encode` 没给 `--count` 时的默认值：`ceil(K × 1.5) + 1`。
 ///
 /// 抽成函数有两个理由：
@@ -452,6 +535,27 @@ fn cmd_encode(args : Args) -> Unit {
   let note = encode_note(count)
   if !note.is_empty() {
     println(note)
+  } else if should_verify_solvability(count) {
+    // LT1（2026-11-12 followup）：末尾可解性验算。
+    //
+    // 默认 `--count` 对小 K 不保证可解，而修复前 `encode` 对这件事完全沉默：
+    // 用户拿到一个「encode 成功、decode 必然 INCOMPLETE」的容器，没有任何
+    // 线索说明是参数问题还是实现问题。这里用同一个解码器试解一次，解不出
+    // 就**如实说**。
+    //
+    // 三条纪律：
+    // 1. 退出码不动 —— 容器本身完全合法（README「`--count 0` 的语义」已经
+    //    论证过「写得出 ≠ 一定解得开」，这条提示与那条同源）；
+    // 2. stdout 只多这一行，且只在解不出时多；
+    // 3. `encode_note` 的零符号提示优先（`else if`）：两条同时出现会让人
+    //    分不清到底是"没符号"还是"符号不够"。
+    let hint = verify_solvability(seed, k, block.symbol_len, symbols) catch {
+      // 验算自己出错不该改变 `encode` 的结论：容器已写好、退出码仍 0。
+      _ => ""
+    }
+    if !hint.is_empty() {
+      println(hint)
+    }
   }
   exit_ok()
 }

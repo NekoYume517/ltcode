@@ -500,6 +500,31 @@ pub fn symbols_bound_msg(k : Int32) -> String            // 空串 = 放行
 `max_source_symbols()`（1<<20），不再把话推到「切不开输入」上
 （2026-11-11 审计，LT-K）。
 
+`encode` **末尾的可解性验算**（2026-11-12 followup，LT1）：
+
+```moonbit
+pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
+pub fn should_verify_solvability(count : Int32) -> Bool
+pub fn solvability_note(k : Int32, count : Int32, missing : Int32) -> String  // 空串 = 不用说话
+```
+
+`encode` 写完容器后用**同一个解码器**试解一次（内部 `verify_solvability`，
+私有；它只调 `@lib.decode_full`，不另写剥皮 —— 判据只能有一个来源）。
+`solvability_note` 的文本被 README 逐字引用，`missing <= 0` 时返回空串：
+
+- 解得出 → stdout 与修复前**逐字相同**（一个字节都不多）；
+- 解不出 → 多一行
+  `note: these N symbols cannot recover all K source symbols (M missing); decode will report INCOMPLETE - raise --count (the default is ceil(1.5K)+1)`；
+- **退出码不变（仍 0）**：容器字段自洽，只是符号不够；这一行是提示不是错误。
+
+`should_verify_solvability` 是成本闸门：只在 `1 <= count <= 4096` 时验算。
+理由是验算 = 再解一遍（同一个 `count × 平均度数 × symbol_len` XOR 量），
+无条件下跑等于让每次编码慢一倍；4096 覆盖默认 count 在 `K <= 2730` 时的全部
+取值（`default_count(2730) = 4096`）。**超阈值时验算完全不跑**，因此「没有打印
+提示」**不等于**「已验证可解」—— 这是 best-effort，`help` 与 README 都写明。
+`--count 0` 不验算（零符号必然解不出），两条 `note:` 互斥，零符号那条优先。
+回归见 `cmd/ltcode/solvability_note_wbtest.mbt`。
+
 `encode --count 0` 是**合法但无意义**的组合：产出只有 43 字节头部、0 个编码
 符号的容器（`entropy=0` 的合法容器），`decode` 对它如实报
 `INCOMPLETE: missing K of K`、退出码 1。不拒绝是因为它本身结构完好

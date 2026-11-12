@@ -72,6 +72,7 @@ $ moon run cmd/ltcode -- encode --input examples/payload.bin \
     --symbols 100 --seed 999 --count 100 --out examples/tight.ltc
 encoded 4000 bytes -> K=100 symbol_len=40 symbols=100 seed=999
 out: examples/tight.ltc (4443 bytes)
+note: these 100 symbols cannot recover all 100 source symbols (51 missing); decode will report INCOMPLETE - raise --count (the default is ceil(1.5K)+1)
 
 $ moon run cmd/ltcode -- decode --input examples/tight.ltc --out examples/tight.out
 decode INCOMPLETE: need more symbols (missing 51 of 100 source symbols)
@@ -79,6 +80,11 @@ missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,
 31,33,34,36,38,42,47,50,51,52,53,54,62,65,67,69,70,71,72,73,74,75,76,77,79,81,
 83,86,89,90,92,93,94,96,98,99
 ```
+
+`encode` 那行 `note:` 是 2026-11-12 加的**末尾可解性验算**：它用同一个解码器
+试解一次，所以这里的 `51 missing` 与下面 `decode` 报的 `missing 51 of 100`
+必然是同一个数（两处都来自同一条 `peel` 路径）。退出码仍是 **0** ——
+容器合法，只是符号不够。
 
 这 51 个下标是**真实算出来的**。没有写出 `tight.out` —— 数据不完整时
 不产生"看起来完整"的文件。同一份源码路径有测试断言：已解出的 49 个

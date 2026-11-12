@@ -33,6 +33,14 @@ fn usage() -> String {
   sb.write_string("  ltcode distcmp  --symbols K --overhead O --trials T ")
   sb.write_string("[--seed S] [--symbol-len N]\n")
   sb.write_string("\n")
+  // 可解性验算的边界必须出现在 help 里（LT1，2026-11-12 followup）：
+  // `encode` 末尾会试解一次，但只在 `--count <= 4096` 时做。不写明的话
+  // 「encode 没打印提示」会被读成「这份容器一定能解码」—— 那正是
+  // best-effort 与 guarantee 的区别，也是最容易误会的一句。
+  sb.write_string(
+    "  note: encode checks solvability up to --count 4096 (best effort, not a guarantee)\n",
+  )
+  sb.write_string("\n")
   sb.write_string("  exit 0 = ok, 1 = decode incomplete, 2 = usage, ")
   sb.write_string("3 = bad input\n")
   sb.to_string()

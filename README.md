@@ -173,6 +173,8 @@ $ echo $?
 $ moon run cmd/ltcode -- encode --input examples/payload.bin \
     --symbols 100 --seed 999 --count 100 --out examples/tight.ltc
 encoded 4000 bytes -> K=100 symbol_len=40 symbols=100 seed=999
+out: examples/tight.ltc (4443 bytes)
+note: these 100 symbols cannot recover all 100 source symbols (51 missing); decode will report INCOMPLETE - raise --count (the default is ceil(1.5K)+1)
 
 $ moon run cmd/ltcode -- decode --input examples/tight.ltc --out tight.out
 decode INCOMPLETE: need more symbols (missing 51 of 100 source symbols)
@@ -185,6 +187,10 @@ $ echo $?
 
 **这 51 个下标是真实算出来的**，不是"看起来差不多"。已解出的 49 个源
 符号逐字节正确（有测试跨 200 条种子断言这一点）。
+
+上面 `encode` 的第三行是 2026-11-12 加的**可解性验算**（下一节详述）：它当场
+就告诉你"这 100 个符号还差 51 个"，与 `decode` 事后报的数字**逐字一致** ——
+但 `encode` 仍然以退出码 0 结束，因为容器本身合法。
 
 ### 小 `K` 时默认 `--count` 也可能解不出来（实测数据，2026-11-12）
 
@@ -203,8 +209,64 @@ $ echo $?
 
 所以小 `K` 请显式给 `--count`（例如 `K=10` 用 40 以上）。这不是编码器缺陷：
 `encode` 只负责写出合法容器，符号够不够是调用方的选择；如实报告在 `decode`
-（exit 1 + 缺失下标）。在 `encode` 末尾顺手跑一遍剥皮再报警是可行的
-（`--count 0` 的 note 就是这个形状），代价是每次编码多一遍剥皮成本，留给后续决定。
+（exit 1 + 缺失下标）。
+
+**2026-11-12 补**：`encode` 末尾现在会自己试解一次并把结论说出来（下一节），
+所以这条不再需要用户先踩一遍才知道。
+
+### `encode` 末尾的可解性验算（best-effort，不是保证）
+
+`encode` 生成完符号后会**用同一个解码器**（`decode_full`，不另写一份剥皮）
+试解一次。解得开就一个字都不多说；解不开就多打印一行：
+
+```
+$ moon run cmd/ltcode -- encode --input examples/payload.bin \
+    --symbols 10 --seed 3 --out k10.ltc
+encoded 4000 bytes -> K=10 symbol_len=400 symbols=16 seed=3
+out: k10.ltc (6507 bytes)
+note: these 16 symbols cannot recover all 10 source symbols (6 missing); decode will report INCOMPLETE - raise --count (the default is ceil(1.5K)+1)
+
+$ moon run cmd/ltcode -- decode --input k10.ltc --out k10.out
+decode INCOMPLETE: need more symbols (missing 6 of 10 source symbols)
+missing indices: 1,2,5,6,7,8
+$ echo $?
+1
+```
+
+退出码**仍是 0**：容器结构完好、字段自洽，只是符号不够 —— 能不能解开取决于
+`--count`，那是调用方的选择。这一行是提示，不是错误；把它做成 exit 2 会把
+「先写头部、符号之后再补发」这个 rateless 的自然用法变成不可表达。
+（同一条推理见上一节 `--count 0`。）
+
+**边界：只在 `--count <= 4096` 时验算。** 验算就是再解一遍，成本与编码同量级
+（同一个 `count × 平均度数 × symbol_len` 的 XOR 量），无条件下跑等于让每次
+`encode` 慢一倍。`4096` 覆盖了默认 `--count` 在 `K <= 2730` 时的全部取值
+（`default_count(2730) = 4096`），也就是本项目「K 至多数千」的全部常规用法。
+实测（release native，5~7 次取最小值，`encode` 全程，含写容器）：
+
+| 场景 | 不验算 | 验算 | 差 |
+|---|---|---|---|
+| 4 KB 输入、`K=100`、`count=300`（本 README 的例子） | 0.053 s | 0.046 s | 噪声内 |
+| 1 MB 输入、`K=1000`、默认 1501 | 0.067 s | 0.103 s | +0.036 s |
+| 256 KB 输入、`K=100`、`count=4096`（闸门边界） | 0.104 s | 0.211 s | +0.107 s |
+| 4 KB 输入、`K=2730`、默认 4096（闸门边界） | 0.046 s | 0.088 s | +0.042 s |
+| 64 KB 输入、`K=10`、`count=4096`（闸门边界的极端形态） | 0.181 s | 0.358 s | +0.177 s |
+| 4 KB 输入、`K=4000`、默认 6001（**超阈值，跳过**） | 0.053 s | 0.051 s | 0（真的没跑） |
+
+也就是说闸门内的最坏情况是**再花一遍编码的钱**（≈2×），而常规规模下这一行
+提示的价格在 10 ms 以内。超阈值时验算**完全不跑**，退出码与 stdout 都与
+修复前逐字相同。
+
+**这是 best-effort，不是保证**：没有打印那一行 **不等于**这份容器一定能解。
+两件事都可能发生：
+
+1. `--count > 4096` 时根本不验算（闸门）；
+2. 验算只回答「**这批**符号够不够」，不回答「这个 `--count` 够不够」——
+   同一个 `count` 换 `--seed` 就可能从 Complete 变成 Incomplete（这正是
+   上面那张小 K 表的由来：`K=10` + 默认 16 符号，默认种子能解、`--seed 3`
+   解不出）。
+
+`help` 里也有同一句话，免得有人把「没提示」读成「已验证」。
 
 ### `--count 0` 的语义：产出无符号容器，解码必然失败
 
@@ -254,6 +316,9 @@ $ echo $?
   「zero-symbol container parses but always decodes Incomplete」锁定，
   比让命令行直接拒绝更干净 —— 拒绝会让"我想先生成头部"这个正当需求
   只能靠绕过 CLI 实现。
+
+`--count 0` 时**不做**上一节那个可解性验算（0 个符号必然解不出，再说一遍只是
+噪音）：两条 `note:` 不会同时出现，这里打印的就是这一条。
 
 ### 损坏的数据会被拦住，而不是变成"看起来成功的文件"
 
@@ -368,12 +433,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 154 tests, all pass
+moon test             # 162 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（154 条，按 `^test "` 计数）：
+测试分布（162 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -399,6 +464,8 @@ moon build --target wasm
 | `default_count_test.mbt` | 5 | 默认 `--count` 是 `ceil(1.5K)+1`（含奇数 K 的分水岭）、触顶时说明「默认值超限」 |
 | `symbols_bound_test.mbt` | 1 | `--symbols` 上界在用法层判、文案点名 `--symbols` 而非输入文件（2026-11-11 审计） |
 | `count_guard_test.mbt` | 1 | `--count` 上限常量与语义（LC-1） |
+| `usage_coverage_wbtest.mbt` | 2 | `help` 与 `accepted_keys` 必须互相投影（2026-11-12 审计） |
+| `solvability_note_wbtest.mbt` | 6 | `encode` 末尾可解性验算：解不出必说、解得出逐字不变、闸门 `count <= 4096`、`--count 0` 优先（2026-11-12 followup） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，

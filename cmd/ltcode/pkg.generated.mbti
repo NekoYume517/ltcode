@@ -10,6 +10,8 @@ pub const LT_MAX_SYMBOL_LEN : Int32 = 1048576
 
 pub const LT_MAX_TRIALS : Int32 = 10_000_000
 
+pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
+
 pub fn accepted_keys(String) -> Array[String]
 
 pub fn default_count(Int32) -> Int32
@@ -39,6 +41,10 @@ pub fn parse_overheads(String) -> Array[Double]
 pub fn parse_overheads_strict(String) -> Result[Array[Double], String]
 
 pub fn parse_seed_token(String) -> UInt64?
+
+pub fn should_verify_solvability(Int32) -> Bool
+
+pub fn solvability_note(Int32, Int32, Int32) -> String
 
 pub fn symbol_free_note() -> String
 
