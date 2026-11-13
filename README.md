@@ -384,6 +384,25 @@ moon run cmd/ltcode -- distcmp --symbols 1000 --overhead 1.2 --trials 200 --seed
 所有命令的 `--seed` 默认是固定常数 `0x4C54434F4445`（不是时钟），
 所以同样的命令在任何机器上都给出同样的输出。
 
+`--symbols` 的上界与 `encode` 完全同域（`max_source_symbols()` = `1 << 20`），
+越界是**用法错误**（exit 2）而不是「输入非法」（exit 3）：
+
+```
+$ ltcode simulate --symbols 1048577 --overhead 1.0 --trials 1
+ltcode: --symbols must be <= 1048576 (got 1048577); the degree distribution table
+        and the decoding CSR index are O(K), so measure at a smaller K and raise
+        --overhead instead
+$ echo $?
+2
+```
+
+同一个值在 `encode` 上一直是 exit 2（LT-K），度量侧漏到 2026-11-13 才补上
+（LT2）：那时它会一路跑到库里的 `random_sources(k)`，报
+`simulate failed: source too large: K=...` —— 一个关于「源文件」的错误，
+而这三条度量命令根本不读文件。另外 `--overhead` 的守卫量是
+`K × overhead`（收到的符号数），K 本身**没有**量级界，所以
+「极小 overhead + 巨大 K」会绕开它，那才是这条域上界真正要紧的地方。
+
 ## 不做什么（明确的设计选择，不是缺陷）
 
 ### 没有 inactivation + 高斯消元
@@ -433,12 +452,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 162 tests, all pass
+moon test             # 165 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（162 条，按 `^test "` 计数）：
+测试分布（165 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -450,6 +469,7 @@ moon build --target wasm
 | `decoder_test.mbt` | 13 | 诚实报缺、跨 200 种子诚实性、无度 1 结构断言、操作计数线性 |
 | `metrics_test.mbt` | 12 | 格式化、可复现、分布对照方向、零试验不产生 NaN |
 | `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
+| `metric_symbols_bound_wbtest.mbt` | 3 | 度量侧 `--symbols` 的域上界 + 否决顺序 + 另三条量级守卫未回退（2026-11-13 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
 | `header_guard_test.mbt` | 7 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计） |
 | `count_zero_symbol_len_test.mbt` | 4 | 零符号容器的 `symbol_len` 域（43 字节边界两侧）、K=93/94、`symbol_len` 与 payload 长短无关（2026-11-11 审计） |

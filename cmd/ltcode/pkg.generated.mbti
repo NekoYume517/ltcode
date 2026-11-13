@@ -30,6 +30,8 @@ pub fn guard_trials(Int32) -> String
 
 pub fn join_ints(Array[Int32]) -> String
 
+pub fn metric_symbols_bound_msg(Int32) -> String
+
 pub fn num_error(String, String, String) -> String
 
 pub fn parse_args(Array[String]) -> Args

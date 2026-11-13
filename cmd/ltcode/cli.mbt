@@ -165,38 +165,72 @@ pub fn guard_symbol_len(symbol_len : Int32) -> String {
 }
 
 ///|
-/// 三个度量子命令共用的量级守卫（LT-B）。
+/// 度量侧 `--symbols` 的上界文案（LT2，2026-11-13 审计）。
+///
+/// 上界值与 `encode` 完全同域（`max_source_symbols()` = `1 << 20`），但
+/// **下一步建议不同**，因此不能复用 `symbols_bound_msg`：那一句写的是
+/// 「把文件切分成几段分别编码」，而 `simulate` / `curve` / `distcmp`
+/// 根本不读文件 —— 照抄会把用户引向一个不存在的动作。
+///
+/// 为什么度量侧也需要这条界：
+/// - `guard_overhead` 的守卫量是 `K × overhead`（收到的符号数），K 本身
+///   没有上界，于是「小 overhead + 巨大 K」能绕开它；
+/// - `run_trial` 先跑 `random_sources(k)` 的 k 次分配，**在**
+///   `SourceBlock::new` 的 K 检查**之前** —— 实测 `--symbols 20000000`
+///   （overhead 1e-5，received 只有 200）要 2.4 s 且内存随 K 线性；
+///   `--symbols 2147483647` 是分钟级、几十 GB 级。
+///
+/// 与其它 guard 同形状：空串 = 放行。
+pub fn metric_symbols_bound_msg(k : Int32) -> String {
+  let limit = @lib.max_source_symbols()
+  if k > limit {
+    "--symbols must be <= \{limit} (got \{k}); the degree distribution table and the decoding CSR index are O(K), so measure at a smaller K and raise --overhead instead"
+  } else {
+    ""
+  }
+}
+
+///|
+/// 三个度量子命令共用的量级守卫（LT-B / LT2）。
 ///
 /// `overheads` 是列表是因为 `curve` 一次要跑多个点 —— 每个点都会独立决定
 /// 一次 `received_count`，因此必须逐个查，不能只看第一个。
 ///
-/// 返回 `true` = 全部在域内；`false` = 已经报过用法错误，调用方直接
-/// `exit_usage()` 返回。先查 trials / symbol-len（与 K 无关）再查 overhead，
-/// 是为了让「两个参数都离谱」时报出**最外层**那个（用户改一次就能看到进展）。
+/// **返回文案而不是打印**（LT2，2026-11-13 审计）：修复前这里是
+/// 「打印 + 返回 Bool」，于是它的措辞**不可断言** —— 唯一可观测的东西是
+/// 「进程退出了没有」。度量侧四条守卫里三条（`guard_trials` /
+/// `guard_symbol_len` / `guard_overhead`）能被逐字断言，唯一不可断言的
+/// 这一条正是漏掉 K 上界的那一条。现在它与本文件其余守卫同形状
+/// （空串 = 放行），`metric_symbols_bound_wbtest.mbt` 因此能逐字锁定文案。
+///
+/// 检查顺序：K → trials → symbol-len → overheads。K 在最前是因为它是
+/// **域**（上界由库的 `max_source_symbols()` 定），其余三条是**量级**；
+/// 「两个参数都离谱」时报最外层那个，用户改一次就能看到进展。
 fn check_metric_magnitudes(
   k : Int32,
   overheads : Array[Double],
   trials : Int32,
   symbol_len : Int32,
-) -> Bool {
+) -> String {
+  let k_msg = metric_symbols_bound_msg(k)
+  if !k_msg.is_empty() {
+    return k_msg
+  }
   let trials_msg = guard_trials(trials)
   if !trials_msg.is_empty() {
-    arg_error(trials_msg)
-    return false
+    return trials_msg
   }
   let len_msg = guard_symbol_len(symbol_len)
   if !len_msg.is_empty() {
-    arg_error(len_msg)
-    return false
+    return len_msg
   }
   for oh in overheads {
     let oh_msg = guard_overhead(k, oh)
     if !oh_msg.is_empty() {
-      arg_error(oh_msg)
-      return false
+      return oh_msg
     }
   }
-  true
+  ""
 }
 
 ///|
@@ -733,7 +767,11 @@ fn cmd_simulate(args : Args) -> Unit {
   }
   // LT-B：量级上限。修复前 overhead 2500000 / 1e300、trials 2147483647、
   // symbol-len 2000000000 都会让这条命令挂死（实测 40~60 秒不终止）。
-  if !check_metric_magnitudes(k, [overhead], trials, symbol_len) {
+  // LT2：`--symbols` 的域上界同在这条路径上（修复前它漏在这里，同一个值在
+  // encode 上 exit 2、在这里 exit 3 且文案说「source too large」）。
+  let too_big = check_metric_magnitudes(k, [overhead], trials, symbol_len)
+  if !too_big.is_empty() {
+    arg_error(too_big)
     exit_usage()
     return
   }
@@ -837,7 +875,10 @@ fn cmd_curve(args : Args) -> Unit {
     return
   }
   // LT-B：逐个 overhead 查量级（`1.0,2500000` 这种混在列表里的值同样致命）
-  if !check_metric_magnitudes(k, overheads, trials, symbol_len) {
+  // LT2：`--symbols` 的域上界也在同一条路径上（逐项查之前先查 K）。
+  let too_big = check_metric_magnitudes(k, overheads, trials, symbol_len)
+  if !too_big.is_empty() {
+    arg_error(too_big)
     exit_usage()
     return
   }
@@ -933,8 +974,10 @@ fn cmd_distcmp(args : Args) -> Unit {
   }
   // LT-B：`distcmp` 把同一个 (K, overhead, trials) 跑**三种**分布，
   // 因此它对这几个参数的敏感度是 simulate 的三倍 —— 同一个守卫值在这里
-  // 尤其不能漏。
-  if !check_metric_magnitudes(k, [overhead], trials, symbol_len) {
+  // 尤其不能漏。LT2：`--symbols` 的域上界也在同一条路径上。
+  let too_big = check_metric_magnitudes(k, [overhead], trials, symbol_len)
+  if !too_big.is_empty() {
+    arg_error(too_big)
     exit_usage()
     return
   }

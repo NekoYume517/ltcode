@@ -460,9 +460,9 @@ pub fn unknown_arg_error(args : Args, cmd : String) -> String   // 空串 = 干�
 `--trials -5`（负数是**值**）、`--overheads 1.0,1.1`、`--symbol-len 40`
 全部照旧通过。
 
-### 度量参数的量级上限（LT-B）
+### 度量参数的量级上限（LT-B / LT2）
 
-`simulate` / `curve` / `distcmp` 的三个参数直接决定循环次数或每次迭代的
+`simulate` / `curve` / `distcmp` 的四个参数直接决定循环次数或每次迭代的
 分配量，超限一律 exit 2 并写明上限：
 
 ```moonbit
@@ -473,6 +473,8 @@ pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
 pub fn guard_trials(trials : Int32) -> String                       // 空串 = 放行
 pub fn guard_overhead(k : Int32, overhead : Double) -> String
 pub fn guard_symbol_len(symbol_len : Int32) -> String
+/// LT2：`--symbols` 的域上界（与 encode 同一个上限，文案不同）
+pub fn metric_symbols_bound_msg(k : Int32) -> String
 ```
 
 `guard_overhead` 的守卫量是 **`K × overhead`（收到的符号数）**，不是
@@ -483,6 +485,26 @@ overhead 本身 —— 同一个 overhead 在 K=10 时无害、K=1<<20 时致命
 2500000`、`--overhead 1e300`、`--trials 2147483647`、`--symbol-len
 2000000000`。根因是 `received_count` 的 `.to_int()` 对 2.5e9 与 1e300 都
 **饱和**到 `2147483647`，随后进入 21 亿次的逐符号编码循环。
+
+`--symbols` 本身（LT2，2026-11-13 审计）也是这条路径上的一环，且它的越界
+**不是**量级问题而是**域**问题：上界由库的 `max_source_symbols()`（`1 << 20`）
+定，`encode` 早在 LT-K 就按 exit 2 拒绝了同一个值，度量侧却漏掉，于是
+`simulate --symbols 1048577` 一路走到 `random_sources(k)` 的 k 次分配
+（**在** `SourceBlock::new` 的 K 检查之前），最后报
+`simulate failed: source too large: K=...`、exit 3 —— 一个「输入文件非法」
+的措辞，而度量命令根本没有输入文件，文案也没点名 `--symbols`。
+现在三个度量命令都先查这一条（`check_metric_magnitudes` 的第一个判断），
+文案由 `metric_symbols_bound_msg` 给出：
+
+```
+ltcode: --symbols must be <= 1048576 (got 1048577); the degree distribution
+        table and the decoding CSR index are O(K), so measure at a smaller K
+        and raise --overhead instead
+```
+
+不复用 `symbols_bound_msg`（encode 那条）是因为**下一步建议不同**：那句写
+「把文件切分成几段分别编码」，而度量命令不读文件。同一个上界、两种建议，
+比一句话两头都不对要清楚。
 
 `encode --count` 的默认值 `ceil(1.5K)+1` 也会触顶（K=700000 → 1050001
 > `LT_MAX_COUNT`）。那处用独立文案说明「**这是默认值**，你没传 --count」：
