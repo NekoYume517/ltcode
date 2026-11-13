@@ -306,7 +306,7 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError
 | 字段 | 合法域 | 越界报 |
 |---|---|---|
 | `K` | `1 ..= 1<<20`（`max_source_symbols()`） | `InvalidHeaderField("K", …)` |
-| `symbol_len` | `1 ..= 文件长度` | `InvalidHeaderField("symbol_len", …)` |
+| `symbol_len` | `1 ..= Int32.MAX`（**只看字段自身**） | `InvalidHeaderField("symbol_len", …)` |
 | `payload_len` | `0 ..= min(K × symbol_len, 2^31−1)` | `InvalidHeaderField("payload_len", …)` |
 | `count` | `0 ..= Int32 上限`，且 `<= 剩余字节 / (4 + symbol_len)` | 超 `Int32` → `InvalidHeaderField`；**仅**超出剩余容量 → `TruncatedSymbol` |
 | `c_q` | `1 ..= 255`（即 `c > 0`，量化后的像） | `InvalidHeaderField("c_q", …)` |
@@ -316,7 +316,6 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError
 `c_q` / `delta_q` 这两个字段是 **LT3（2026-11-13）** 补上的：修复前它们是
 头部里唯一没有域校验的两个，越界值被原样交给 `robust_soliton_checked`，于是
 CLI 报出来的是**分布的错**：
-
 ```
 $ # 合法容器的第 5 字节（c_q）改成 0
 ltcode: decode error: degree distribution is not normalized: sum=0 (tolerance 1e-12)
@@ -339,7 +338,6 @@ ltcode: not a ltcode container: invalid container header: delta_q=101 exceeds th
 分布表没归一化）。回归见 `src/header_guard_test.mbt` 的 `LT3:` 三条。
 
 两点取舍值得说明：
-
 
 - `count` 的两层判断：超过 `Int32` 上限是「头部字段离谱」（那个值转
   `Int32` 必变负），而仅超出剩余容量时更可能是**文件被截断** —— 后者对
@@ -447,9 +445,9 @@ LT-G 又修了一次同类错位：`K` 变负曾报 `empty source`（把"头部�
 ```
 ltcode encode   --input <file> --symbols K [--seed S] [--count N] [--out <file>]
 ltcode decode   --input <file> --out <file> [--symbols K] [--seed S]
-ltcode simulate --symbols K --overhead O --trials T [--seed S]
-ltcode curve    --symbols K --overheads a,b,c --trials T [--seed S]
-ltcode distcmp  --symbols K --overhead O --trials T [--seed S]
+ltcode simulate --symbols K --overhead O --trials T [--seed S] [--symbol-len N]
+ltcode curve    --symbols K --overheads a,b,c --trials T [--seed S] [--symbol-len N]
+ltcode distcmp  --symbols K --overhead O --trials T [--seed S] [--symbol-len N]
 ```
 
 退出码：**0** 成功 / **1** 解码失败（数据不足）/ **2** 用法错误 / **3** 输入错误

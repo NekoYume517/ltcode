@@ -5,20 +5,28 @@
 > `D:\code\moonbit\ltcode` 下运行，环境：
 >
 > ```powershell
-> $env:MOON_HOME="E:\moonbit\home"; $env:Path="E:\moonbit\home\bin;"+$env:Path
+> $env:MOON_HOME="D:\code\moonbit\audit\toolchain\x"
+> $env:Path="D:\code\moonbit\audit\toolchain\x\bin;"+$env:Path
+> moon version   # 0.1.20261102（moonc v0.10.19）
 > ```
+>
+> 早期版本这里写的是 `E:\moonbit\home`（`moon 0.1.20261016`）—— 那套工具链
+> **已经编译不了这批代码**（`#derive(...)` 属性语法），见 HANDOVER 第十二节。
+> 本文件的输出是**确定性**的（固定种子、无时钟），因此换工具链后逐字不变：
+> 2026-11-13 用上面的环境把下面每一条 **CLI 命令**重跑过一遍，数字与这里
+> 记录的相同（§7 那张表来自库层实验、不是 CLI 输出，见该节注）。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# (0 errors)
+# Finished. moon: ran 3 tasks, now up to date (516 warnings, 0 errors)
 
 $ moon test
-Total tests: 154, passed: 154, failed: 0.
+Total tests: 168, passed: 168, failed: 0.
 
 $ moon fmt --check
-Finished. moon: ran 22 tasks, now up to date
+# Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
 # exit code 0
 
 $ moon build --target wasm
@@ -140,6 +148,8 @@ decoded OK: K=100 symbols=300 payload=4000 bytes (checksum verified)
 
 ```powershell
 $ $exe = "_build\native\debug\build\cmd\ltcode\ltcode.exe"
+# 这个二进制要单独构建：`moon build` 的默认目标是 wasm（见 §1）
+$ moon build --target native
 
 $ & $exe decode --input examples/tight.ltc --out examples/x.bin
 # (输出 INCOMPLETE)
@@ -263,6 +273,14 @@ K=10 oh=3.0 → 196/200     K=10 oh=2.0 → 175/200
 K=17 oh=2.0 → 183/200     K=40 oh=2.0 → 194/200
 K=64 oh=2.0 → 196/200
 ```
+
+> 这一节的数字来自一次 **200 trials 的库层实验**，种子按 `s × 2654435761 + K`
+> 派生（同一个派生公式现在写在 `decoder_test.mbt` 的成功率用例里，那里跑
+> 100 trials 并以实测值向下取整作阈值）。**CLI 复现不了这几个数**：
+> `simulate` / `curve` 用的种子是 `seed + t`，所以
+> `simulate --symbols 10 --overhead 3.0 --trials 200` 给出的是同一量级、
+> 但不是 196/200 的结果。这不是可复现性缺陷 —— 这一节记录的是库层实验，
+> 而「哪条命令复现哪个数」在 §8 里另行写明。
 
 原因不是开销不够，而是**剥皮需要至少一个度为 1 的符号**：失败的样本里
 `resolved == 0` 压倒多数。K 小时 μ(1) ≈ 0.147，30 个符号全不为 1 的概率
