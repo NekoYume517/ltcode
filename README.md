@@ -452,12 +452,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 165 tests, all pass
+moon test             # 168 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（165 条，按 `^test "` 计数）：
+测试分布（168 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -471,7 +471,7 @@ moon build --target wasm
 | `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
 | `metric_symbols_bound_wbtest.mbt` | 3 | 度量侧 `--symbols` 的域上界 + 否决顺序 + 另三条量级守卫未回退（2026-11-13 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
-| `header_guard_test.mbt` | 7 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计） |
+| `header_guard_test.mbt` | 10 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计）、`c_q`/`delta_q` 域校验（2026-11-13 审计） |
 | `count_zero_symbol_len_test.mbt` | 4 | 零符号容器的 `symbol_len` 域（43 字节边界两侧）、K=93/94、`symbol_len` 与 payload 长短无关（2026-11-11 审计） |
 | `trailing_guard_test.mbt` | 5 | 尾部多余字节（追加垃圾 / 拼接容器）必须报错 |
 | `k_field_test.mbt` | 6 | 头部 K 字段域校验与独立文案 |

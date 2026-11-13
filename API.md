@@ -292,7 +292,7 @@ pub(all) struct Container {
 pub fn unpack_container(data : Bytes) -> Container raise LtError
 ```
 
-### 头部的域校验（LT-A / LT-D / LT-G，2026-11-10 审计后加入）
+### 头部的域校验（LT-A / LT-D / LT-G / LT3，2026-11-10 / 2026-11-13 审计）
 
 头里的每个字段都是**外部输入**，而 `K` / `symbol_len` / `count` 在文件里
 是无符号 u32、`payload_len` 是 u64，内部一律有符号 `Int32`。直接读取会
@@ -309,9 +309,37 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError
 | `symbol_len` | `1 ..= 文件长度` | `InvalidHeaderField("symbol_len", …)` |
 | `payload_len` | `0 ..= min(K × symbol_len, 2^31−1)` | `InvalidHeaderField("payload_len", …)` |
 | `count` | `0 ..= Int32 上限`，且 `<= 剩余字节 / (4 + symbol_len)` | 超 `Int32` → `InvalidHeaderField`；**仅**超出剩余容量 → `TruncatedSymbol` |
+| `c_q` | `1 ..= 255`（即 `c > 0`，量化后的像） | `InvalidHeaderField("c_q", …)` |
+| `delta_q` | `1 ..= 100`（即 `0 < δ <= 1`） | `InvalidHeaderField("delta_q", …)` |
 | 尾部 | 读完 `count` 个符号后必须**恰好**用完文件 | `TrailingBytes(已消费, 总长)` |
 
+`c_q` / `delta_q` 这两个字段是 **LT3（2026-11-13）** 补上的：修复前它们是
+头部里唯一没有域校验的两个，越界值被原样交给 `robust_soliton_checked`，于是
+CLI 报出来的是**分布的错**：
+
+```
+$ # 合法容器的第 5 字节（c_q）改成 0
+ltcode: decode error: degree distribution is not normalized: sum=0 (tolerance 1e-12)
+$ # 第 6 字节（delta_q）改成 101（δ=1.01）
+ltcode: decode error: degree distribution is not normalized: sum=1.01 (tolerance 1e-12)
+```
+
+文案指错了对象（用户从来没有给过「度数分布」），而且那两个 `sum=` 数字是
+分布表的求和，从它们倒推不出"第 5/6 个字节坏了"。与 LT-2（魔数/版本）、
+LT-G（K 变负）、LT-A（count / payload_len）、LT-D（尾部）同族：**头部字段
+的问题必须按头部字段报**。修复后：
+
+```
+ltcode: not a ltcode container: invalid container header: c_q=0 is below the minimum 1
+ltcode: not a ltcode container: invalid container header: delta_q=101 exceeds the maximum 100
+```
+
+副作用（好的那种）：`decode_full` 此后不会再因为**头部取值**而 raise
+`DistributionNotNormalized`，那个变体恢复成它本来的含义（调用方自己构造的
+分布表没归一化）。回归见 `src/header_guard_test.mbt` 的 `LT3:` 三条。
+
 两点取舍值得说明：
+
 
 - `count` 的两层判断：超过 `Int32` 上限是「头部字段离谱」（那个值转
   `Int32` 必变负），而仅超出剩余容量时更可能是**文件被截断** —— 后者对

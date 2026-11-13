@@ -304,8 +304,45 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
     // 版本不符：明确报错而不是尽力解析，也不借用无关的错误变体
     raise LtError::UnsupportedVersion(version, container_version)
   }
-  let c = dequantize_param(r.byte())
-  let delta = dequantize_param(r.byte())
+  // `c` / `delta` 的域校验（LT3，2026-11-13 审计）。
+  //
+  // 这两个字段是头部里**唯一**没有域校验的两个，修复前它们的越界被原样交给
+  // `robust_soliton_checked`，于是 decode 报出来的是**分布的错**：
+  //
+  //   c_q = 0        → decode error: degree distribution is not normalized: sum=0
+  //   delta_q = 101  → decode error: degree distribution is not normalized: sum=1.01
+  //
+  // 文案指错了对象：用户从来没有给过「度数分布」，那两个 `sum=` 数字是分布表的
+  // 求和，从它们倒推不出"第 5/6 个字节坏了"。与 LT-2（魔数/版本从
+  // `TruncatedSymbol` / `SourceTooLarge` 拆出来）、LT-G（K 变负从
+  // `EmptySource` 拆出来）、LT-A（count / payload_len 补域）、LT-D（尾部）
+  // 同族：**头部字段的问题必须按头部字段报**，并且校验只能落在 unpack
+  // 这一层（唯一入口）。
+  //
+  // 域就是两个量化函数的像与库的域的交集：
+  // - `c_q = quantize_param(c)`，而 `robust_soliton_checked` 要求 `c > 0`
+  //   → `c_q ∈ [1, 255]`（0 即 c=0，被库拒绝）；
+  // - `delta_q = quantize_param(delta)`，要求 `0 < delta <= 1`
+  //   → `delta_q ∈ [1, 100]`（101 = 1.01 已超出上界）。
+  //
+  // 校验放在这里还有一个副作用（好的那种）：`decode_full` 此后不会再因为
+  // **头部取值**而 raise `DistributionNotNormalized`，那个变体恢复成它本来的
+  // 含义（调用方自己构造的分布表没归一化）。
+  let c_q = r.byte()
+  if c_q < 1 {
+    raise LtError::InvalidHeaderField("c_q", c_q.to_uint64(), 1UL, 255UL)
+  }
+  let delta_q = r.byte()
+  if delta_q < 1 || delta_q > 100 {
+    raise LtError::InvalidHeaderField(
+      "delta_q",
+      delta_q.to_uint64(),
+      1UL,
+      100UL,
+    )
+  }
+  let c = dequantize_param(c_q)
+  let delta = dequantize_param(delta_q)
   // K 按无符号原值读出：后面的两个上界要用它做乘法，而它在 Int32 里可能
   // 是负数（`0x80000000`），负负相乘会把上界算成天文数字从而**放行**本该
   // 拒绝的 payload_len。
