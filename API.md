@@ -128,6 +128,11 @@ PLAN.md §4.2 已按此更正。
 （K=1000 时 0.0931 vs 0.0586）。少写这一条，分布就退化成近似 1/d 的尾巴，
 低开销下的成功率会掉一个数量级 —— 有测试断言这两个值必须不同。
 
+**`r = 0` 的边界（2026-11-15 审计）**：`r = c·ln(K/δ)·√K = 0` 的唯一解是
+K=1 且 δ=1（此时尖峰公式是 `0·ln(0) = NaN`）。该点 τ 取 **0**（r→0⁺ 的
+极限），分布退化为 μ(1)=1 —— `robust_soliton_checked(1, c, 1.0)` 因此
+合法且可用，容器头的 `delta_q=100`（δ=1.00）也能正常解码。
+
 ## 4. 符号与源块 `src/symbol.mbt`
 
 ```moonbit
@@ -179,6 +184,15 @@ pub fn default_delta() -> Double          // 0.5
 
 **子集的唯一决定因素**是 `(seed, index, K, 分布参数)` —— 任意符号可独立重算。
 
+**`c` / `delta` 先归一到容器量化网格（2026-11-15 审计）**：`Encoder::new`
+建分布前把两个参数过一遍 `quantize_param → dequantize_param`（§8）。容器头
+只能存百分之一量化值，若编码端用原始浮点值、解码端用量化值，非网格参数
+（如 `c=0.014` → 网格 `0.01`）会让两端算出不同的子集 —— 实测 300 个符号
+里 46 个方程失效，容器「encode 成功、decode 必然失败」。归一后两端恒一致；
+网格点参数（任何 `q/100` 的值，含默认 `0.1`/`0.5`）逐位不变；`c < 0.005`
+（归一后为 0）与非有限值在入口报错。数学层（`robust_distribution` /
+`sample_degree`）不受影响，仍接受任意 `c > 0`。
+
 抽样用 **Floyd 算法**，只用 O(d) 内存（不是 O(K)）。均匀性由
 `encoder_test.mbt` 对 K=6/d=3 的全部 20 个子集做 200000 次穷举统计锁定。
 
@@ -224,6 +238,13 @@ pub fn decode_full(seed : UInt64, k : Int, symbol_len : Int,
 - `recovered[i] is None` **当且仅当** `i ∈ missing`。两个视图必须一致。
 - 已解出的 `recovered[i]` **逐字节等于**真实源符号。
 - **绝不用零字节或任何填充值补齐缺口。**
+
+`c` / `delta` 参数与编码端对称：`decode_with_stats` 建分布前同样过
+`quantize_param → dequantize_param`（2026-11-15 审计）。CLI 路径的参数
+来自 `unpack_container`（已是网格值，恒等）；这条归一管的是**直接调用**
+的库用户 —— 编码端用网格值采样，解码端也必须同样归一，非网格参数两端
+才会一致。非有限值 raise `DistributionNotNormalized`（不会被量化钳位
+静默吸成合法值）。
 
 有测试跨 200 条种子断言"凡声称解出的，必须真的是对的"。
 
@@ -276,6 +297,13 @@ pub fn header_len() -> Int                     // 43
 
 pub fn quantize_param(x : Double) -> Int        // round(x*100) 钳到 [0,255]
 pub fn dequantize_param(q : Int) -> Double
+
+/// `quantize_param` 的像是 [0,255]，而 unpack 的头部域是 `c_q ∈ [1,255]`、
+/// `delta_q ∈ [1,100]` —— 越出像内域的参数（c<0.005、delta<0.005、
+/// delta>1）写出的头会被 unpack 明确拒绝（InvalidHeaderField，不是静默
+/// 坏数据）。可表示域：c ∈ [0.005, 2.555]、delta ∈ [0.005, 1]。
+/// 走 Encoder 的正常路径在入口就归一/拒绝（§5），直接调 pack_container
+/// 的调用方由 unpack 把关（2026-11-15 审计锁定，见 quantize_image_test.mbt）。
 
 /// FNV-1a 64。抓意外损坏，不抗主动构造 —— 能力边界见 docs/implementation.md §5b。
 pub fn payload_hash(data : Bytes) -> UInt64

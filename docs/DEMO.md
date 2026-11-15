@@ -23,7 +23,7 @@ $ moon check
 # Finished. moon: ran 3 tasks, now up to date (516 warnings, 0 errors)
 
 $ moon test
-Total tests: 168, passed: 168, failed: 0.
+Total tests: 185, passed: 185, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）

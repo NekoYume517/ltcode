@@ -516,3 +516,77 @@ inactivation / 高斯消元后（那会让"已解出"与"仍在 rem 里"同时�
 
 唯一的交集是"位运算要小心"，但连这点也不是同一个问题：这里的位运算
 服务于 `xtime()`（域乘法）和 xorshift（PRNG），不是 IEEE 754 的字段拆分。
+
+## 14. 2026-11-15 轮对抗审计：LT4 / LT5 / LT6
+
+三个真实缺陷，全部「先红后绿 + 反向验证」修复（commit 见 git log，
+测试分别落在 `src/tau_r0_test.mbt`、`src/quantize_image_test.mbt`、
+`cmd/ltcode/metric_work_guard_wbtest.mbt`）。
+
+### LT4：τ 尖峰在 r=0 处产出 NaN（合法域值被借「分布未归一化」拒绝）
+
+`r = c·ln(K/δ)·√K = 0` 的唯一解是 **K=1 且 δ=1**（δ≤1、K≥1 时
+`ln(K/δ) ≥ 0`，等号只在 K=δ=1）。此时尖峰点公式 `r·ln(r/δ)/K` 是
+`0·(-inf) = NaN`，β 与 μ 全部被污染，`validate_distribution` 在第一个
+pmf 项拒绝 —— 报的还是 `sum=0`（遇到 NaN 时累计值还是 0）。而容器头的
+`delta_q=100`（δ=1.00）在 LT3 之后是**域内合法**头部值，decode 却借
+「度数分布未归一化」把它拒掉：合法输入被拒 + 文案指错对象，正是 LT3
+要消灭的那一族。数学上 τ 尖峰在 r=0 处不存在（r·ln(r/δ) 在 r→0⁺ 的
+极限是 0），分布退化为 μ(1)=1。修复：`robust_tau` 的尖峰分支在
+`r <= 0` 时取 0；r>0 的全部行为逐位不变。修复后 K=1 + delta_q=100 的
+容器 `decoded OK (checksum verified)`，SHA-256 与原文全等。
+
+### LT5：非网格参数的容器往返失配（两端参数不一致）
+
+API.md 声称 c/delta「编解码两个方向都过同一个量化函数」，实现里只有
+解码方向过了：`Encoder::new` 用原始浮点值建分布，容器头存
+`quantize_param(c)`。量化是有损的（`dequantize(quantize(0.014)) =
+0.01 ≠ 0.014`），于是**任何不在百分之一网格上**的参数都会产出
+「编码端 0.014、解码端 0.01」的容器 —— 实测 K=200、seed=12345 下
+300 个 index 有 46 个子集失配（第 0 个就不同），decode 报
+CorruptionDetected（剥皮解出错误 payload 被哈希拦下）而 encode 一声
+不吭 exit 0。修复：`Encoder::new` 与 `decode_with_stats` 建分布前都过
+`quantized_pair`（非有限值显式拒绝 —— 否则 `c=inf` 会被 quantize 的
+255 钳位静默吸成 2.55）；网格点参数逐位不变（`quantize(dequantize(q))
+== q` 由全像测试锁定）；`c < 0.005`（归一后为 0）在编码入口被拒 ——
+从「静默产出不可读容器」变成明确报错。数学层
+（`robust_distribution` / `sample_degree`）不受影响。
+
+随附锁定的**量化像缝隙**（不做行为修复，理由）：`quantize_param` 的像
+[0,255] 与 unpack 的域 [1,255]/[1,100] 有缝，绕过 Encoder 直接
+`pack_container` 可产出越像头。pack 侧 clamp 会改写参数造成子集失配
+（更糟）、收紧库的 c 下界会制造新的「合法输入被拒」（LT4 刚消灭的
+那族）、pack 加 raise 是破坏性签名变更 —— 都不做。后果不是静默损坏：
+unpack 明确报 `InvalidHeaderField` 指向具体头部字节；行为由
+`quantize_image_test.mbt` 锁定，可表示域写进 API.md §8。
+
+### LT6：`trials × received` 乘积无守卫（域内组合小时级挂死）
+
+LT-B 的三个上限是独立的，乘积没有守卫。`simulate --symbols 1000000
+--overhead 1.2 --trials 10`（1.2e7 符号操作）debug 构建 17+ 分钟不终止；
+`simulate --symbols 1000 --overhead 1.2 --trials 10000000`（1.2e10）
+外推 ≈ 20 小时。单符号成本随 K **超线性**（release native 实测：
+K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、K=1e6 →
+≥1630 µs —— K=1e6 单 trial 1961 s 未跑完），所以乘积守卫比任何单因子
+守卫都更贴真实成本。修复：`guard_work(trials, k, overhead)`（Int64
+乘积，Int32 会回绕）接入 `check_metric_magnitudes`，上限
+`LT_MAX_WORK = 2e6`。取值的**下界锚点是 README 的 PLAN 命令**
+`simulate --symbols 1000 --overhead 1.2 --trials 1000` = 1.2e6（第一版
+取 1e6 把这条文档命令误伤成 exit 2，第二天提交修正为 2e6 —— 文档
+承诺的确定性数字必须逐字可复现，守卫不能破坏它）；上限内最坏组合
+（2e6 × 1630 µs）外推 ≈ 55 分钟，不存在天级合法组合。
+
+### 顺带核实过、确认没问题的
+
+- **GF(256) 逆元/幂路径**（PowerShell 独立实现复核）：3 是本原元
+  （log 表无空洞）、全 255 元素 exp 表逆元 == 暴力求逆、`exp[509]`
+  环绕正确、FIPS-197 与 API.md 全部锚点一致 —— 配合既有 65536 对
+  乘法全量对照，inv/pow 路径无独立缺陷。
+- **wasm/native 一致性**（新参数族）：K=1、K=1/count=0（零符号）、
+  K=2/seed=0、K=100/count=1/seed=max、K=93/默认种子，5 组容器
+  SHA-256 全等；wasm 解 native 容器行为一致；**全套 185 条测试在
+  wasm 目标上跑一遍全绿**（本轮全部新断言在两个目标上逐条复验）。
+- **文档命令全量复跑**（确定性契约）：README/DEMO 的 curve 9 行、
+  simulate 793/1000、distcmp 162/200、seed-50000 对照、encode 13243
+  字节、tight 51 missing、K=10/seed=3 的 6 missing（1,2,5,6,7,8）、
+  `--symbols 1048577` 的 exit 2 文案 —— 全部逐字一致。

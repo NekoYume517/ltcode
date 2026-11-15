@@ -452,12 +452,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 168 tests, all pass
+moon test             # 185 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（168 条，按 `^test "` 计数）：
+测试分布（185 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -465,11 +465,14 @@ moon build --target wasm
 | `gf256_domain_test.mbt` | 8 | 输入按元素截断到低 8 位、负指数归一、大指数不溢出（2026-11-10 审计） |
 | `rng_test.mbt` | 9 | 前 16 输出锁定、拒绝采样阈值、取模偏差可见性 |
 | `distribution_test.mbt` | 13 | 归一化 1e-12、τ 尖峰、3σ 采样、整条 pmf、K=1/2/3 |
+| `tau_r0_test.mbt` | 4 | τ 尖峰在 r=0（K=1、δ=1.0）取 0 而非 NaN；K=1/δ=1 的分布、往返与容器（2026-11-15 审计） |
+| `quantize_image_test.mbt` | 10 | 非网格参数的量化归一往返、量化像缝隙的行为锁定、全像恒等（2026-11-15 审计） |
 | `encoder_test.mbt` | 10 | 确定性、无放回、20 个子集穷举、O(d) 内存、K=1 退化 |
 | `decoder_test.mbt` | 13 | 诚实报缺、跨 200 种子诚实性、无度 1 结构断言、操作计数线性 |
 | `metrics_test.mbt` | 12 | 格式化、可复现、分布对照方向、零试验不产生 NaN |
 | `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
 | `metric_symbols_bound_wbtest.mbt` | 3 | 度量侧 `--symbols` 的域上界 + 否决顺序 + 另三条量级守卫未回退（2026-11-13 审计） |
+| `metric_work_guard_wbtest.mbt` | 3 | `--trials × received` 的乘积守卫（LT_MAX_WORK）与边界精确性（2026-11-15 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
 | `header_guard_test.mbt` | 10 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计）、`c_q`/`delta_q` 域校验（2026-11-13 审计） |
 | `count_zero_symbol_len_test.mbt` | 4 | 零符号容器的 `symbol_len` 域（43 字节边界两侧）、K=93/94、`symbol_len` 与 payload 长短无关（2026-11-11 审计） |
