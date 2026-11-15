@@ -175,15 +175,16 @@ pub fn guard_overhead(k : Int32, overhead : Double) -> String {
 /// 取值依据（release native 实测，`LT6-trials-x-K-timing.log`）：
 /// 单符号成本随 K 超线性 —— K=1000 → 6.1 µs、K=10000 → 19.9 µs、
 /// K=100000 → 215 µs、K=1e6 → ≥1630 µs（单 trial 1961 s 未跑完被杀）。
-/// 上限 `1e6`：
-/// - README / DEMO 的全部既有命令每点 ≤ 1e6（`curve` 每点
-///   2000×500=1e6、`distcmp` 4e5、`simulate` 单点 1e6），放行不卡边界；
-/// - 上限内最坏组合（K≈8e5~1e6 的单 trial，或 K=1e5 的少量 trial）
-///   按实测外推 ≈ 3~25 分钟，**不存在**天级挂死的合法组合；
+/// 下界锚点是 README 承诺的复现命令 `simulate --symbols 1000 --overhead
+/// 1.2 --trials 1000` = **1.2e6**（文档数字 793/1000，PLAN 指定的样本量
+/// —— 1e6 会把这条文档命令误伤成 exit 2），上限因此取 `2e6`：
+/// - README / DEMO 的全部既有命令每点 ≤ 1.2e6，放行不卡边界；
+/// - 上限内最坏组合（2e6 × 1630 µs）按实测外推 ≈ 55 分钟，**不存在**
+///   天级挂死的合法组合；
 /// - 无守卫时的天文组合（1e7 trials × 4e6 received = 4e13 符号操作，
 ///   数十万年）在用法层就报错。与 `guard_overhead` 同形状：空串 = 放行，
 ///   非空 = 用法错误文案（可断言）。
-pub const LT_MAX_WORK : Int64 = 1_000_000L
+pub const LT_MAX_WORK : Int64 = 2_000_000L
 
 ///|
 /// `--trials × received` 的乘积守卫（LT6，见 `LT_MAX_WORK`）。

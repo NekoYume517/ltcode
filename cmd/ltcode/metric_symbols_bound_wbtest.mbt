@@ -53,7 +53,7 @@ test "LT2: metric commands reject --symbols above max_source_symbols" {
   inspect(check_metric_magnitudes(1, [1.0], 1, 4), content="")
   let under_work = (limit.to_double() * 0.9).to_int()
   inspect(check_metric_magnitudes(limit, [0.9], 1, 4), content="")
-  assert_true(under_work <= 1000000)
+  assert_true(under_work <= 2000000)
   inspect(check_metric_magnitudes(1000, [1.0, 1.2, 1.5], 500, 40), content="")
   // 越界：必须非空，且点名 `--symbols`、带上界与用户给的值
   let over = check_metric_magnitudes(limit + 1, [1.0], 1, 4)

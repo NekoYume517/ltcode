@@ -10,7 +10,7 @@ pub const LT_MAX_SYMBOL_LEN : Int32 = 1048576
 
 pub const LT_MAX_TRIALS : Int32 = 10_000_000
 
-pub const LT_MAX_WORK : Int64 = 1_000_000
+pub const LT_MAX_WORK : Int64 = 2_000_000
 
 pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
 

@@ -33,10 +33,10 @@ test "LT6: trials at its own limit with modest K is still rejected" {
 }
 
 ///|
-/// 放行侧：README/DEMO 的全部既有命令（每点 ≤ 1e6 符号操作）不受影响；
-/// 上限边界精确（恰好 1e6 放、+1 拒）。注意 K=1e6、trials=1（1.2e6）
-/// **也被拒** —— 它是 33 分钟级的单次作业（实测 1961 s 未跑完被杀），
-/// 在「最坏合法组合分钟级」的预算之外；要测大 K 就降 overhead 或分批。
+/// 放行侧：README/DEMO 的全部既有命令必须继续可复现。锚点是 README
+/// 「PLAN 要求」的那条 `simulate --symbols 1000 --overhead 1.2 --trials
+/// 1000`（= 1.2e6，文档承诺 793/1000）—— 上限因此取 2e6 而不是 1e6
+/// （1e6 会把这条文档命令误伤成 exit 2）。边界精确：恰好 2e6 放、+1 拒。
 test "LT6: documented commands still pass and the boundary is exact" {
   // README 的 curve 点：K=1000、oh=1.2、trials=500 → 6e5
   let a = check_metric_magnitudes(1000, [1.2], 500, 4)
@@ -44,16 +44,19 @@ test "LT6: documented commands still pass and the boundary is exact" {
   // README 的 distcmp：K=1000、oh=2.0、trials=200 → 4e5
   let b = check_metric_magnitudes(1000, [2.0], 200, 4)
   assert_true(b.is_empty())
-  // DEMO 的 simulate：K=1000、oh=1.0、trials=1000 → 1e6（恰在上限）
-  let c = check_metric_magnitudes(1000, [1.0], 1000, 4)
+  // README 的 simulate（PLAN 锚点）：K=1000、oh=1.2、trials=1000 → 1.2e6
+  let c = check_metric_magnitudes(1000, [1.2], 1000, 4)
   assert_true(c.is_empty())
-  // 实测过耗时的组合：K=10000、trials=50、oh=1.2 → 6e5（11.95 s）
-  let c2 = check_metric_magnitudes(10000, [1.2], 50, 4)
+  // DEMO 的 simulate：K=1000、oh=1.0、trials=1000 → 1e6
+  let c2 = check_metric_magnitudes(1000, [1.0], 1000, 4)
   assert_true(c2.is_empty())
-  // 边界 +1：1000 × 1001 = 1001000 > 1e6 拒
-  let d = check_metric_magnitudes(1000, [1.0], 1001, 4)
-  assert_true(!d.is_empty())
-  // K=1e6、trials=1 → 1.2e6 > 1e6 拒（33 分钟级的单次作业）
+  // 单次大 K：K=1e6、trials=1 → 1.2e6 放行（33 分钟级，域内合法度量）
   let e = check_metric_magnitudes(1000000, [1.2], 1, 4)
-  assert_true(!e.is_empty())
+  assert_true(e.is_empty())
+  // 边界：恰好 2e6 放（K=1000、oh=2.0、trials=1000）
+  let f = check_metric_magnitudes(1000, [2.0], 1000, 4)
+  assert_true(f.is_empty())
+  // 边界 +1：2002000 > 2e6 拒
+  let d = check_metric_magnitudes(1000, [2.0], 1001, 4)
+  assert_true(!d.is_empty())
 }
