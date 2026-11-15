@@ -68,6 +68,17 @@ pub fn robust_kr_index(k : Int32, c : Double, delta : Double) -> Int32 {
 /// `K/R` 那一点的值明显高于区间公式（K=1000/c=0.1/δ=0.5 时：0.0931 vs
 /// 0.0586），这是分布能在有限 K 下工作的关键 —— 少写这一条，度数分布就退化成
 /// 一个近似 1/d 的尾巴，1.2 开销下的成功率会掉一大截。
+///
+/// ## `r = 0` 的边界（LT4，2026-11-15 审计）
+///
+/// `r = c·ln(K/δ)·√K = 0` 的唯一解是 **K=1 且 δ=1**（`δ ≤ 1`、`K ≥ 1` 时
+/// `ln(K/δ) ≥ 0`，等号只在 K=δ=1）。此时尖峰点公式 `r·ln(r/δ)/K` 是
+/// `0 · ln(0) = 0 · (-inf) = NaN`，会把整个分布（β、μ）污染成 NaN，
+/// `validate_distribution` 于是拒绝一个**域内合法**的参数组合 —— 而容器头
+/// 的 `delta_q=100`（δ=1.00）在 LT3 之后是合法头部值，decode 就会借
+/// 「分布未归一化 sum=0」把它拒掉。数学上 τ 尖峰在 r=0 处**不存在**
+/// （`r·ln(r/δ)` 在 r→0⁺ 的极限是 0），分布退化为 μ(1)=1。因此 `r <= 0`
+/// 时尖峰取 0。
 pub fn robust_tau(d : Int32, k : Int32, c : Double, delta : Double) -> Double {
   if k < 1 || d < 1 || d > k {
     return 0.0
@@ -77,7 +88,11 @@ pub fn robust_tau(d : Int32, k : Int32, c : Double, delta : Double) -> Double {
   if d < kr {
     r / (d.to_double() * k.to_double())
   } else if d == kr {
-    r * @math.ln(r / delta) / k.to_double()
+    if r <= 0.0 {
+      0.0
+    } else {
+      r * @math.ln(r / delta) / k.to_double()
+    }
   } else {
     0.0
   }
