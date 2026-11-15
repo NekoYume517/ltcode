@@ -34,13 +34,27 @@ pub(all) struct Encoder {
 ///|
 /// 构造编码器。`c` 与 `δ` 是鲁棒孤波参数，必须与解码端一致
 /// （它们决定子集抽样，不是"只影响性能的旋钮"）。
+///
+/// **两个参数先归一到容器头的量化网格**（LT5，2026-11-15 审计）：
+/// 容器头只存 `round(c*100)` / `round(delta*100)`，解码端从文件里拿到的
+/// 是 `dequantize_param` 的像。若编码端用原始值建分布、解码端用量化值，
+/// 非网格参数（`c=0.014`）会让两端算出不同的子集 —— 实测 300 个符号里
+/// 46 个方程在解码端失效，容器「encode 成功、decode 必然失败」。因此
+/// 编码入口与解码入口（`decode_with_stats`）都过同一个
+/// `quantize_param → dequantize_param`；网格点参数（含默认 `0.1`/`0.5`）
+/// 经此逐位不变。非有限值与量化后越域的值（`c < 0.005`）在此报错，
+/// 而不是产出解不开的容器。
 pub fn Encoder::new(
   block : SourceBlock,
   seed : UInt64,
   c : Double,
   delta : Double,
 ) -> Result[Encoder, LtError] {
-  match robust_soliton_checked(block.k, c, delta) {
+  let qc = match quantized_pair(c, delta) {
+    Err(e) => return Err(e)
+    Ok(pair) => pair
+  }
+  match robust_soliton_checked(block.k, qc.0, qc.1) {
     Ok(dist) => Ok({ seed, block, dist, })
     Err(e) => Err(e)
   }

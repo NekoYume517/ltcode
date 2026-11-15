@@ -147,7 +147,16 @@ pub fn decode_with_stats(
       raise LtError::TruncatedSymbol(r.data.length(), symbol_len)
     }
   }
-  let dist = match robust_soliton_checked(k, c, delta) {
+  // LT5（2026-11-15 审计）：与 `Encoder::new` 对称 —— 参数先归一到容器
+  // 的量化网格再建分布。CLI 的 unpack 路径已经过 dequantize（网格值，
+  // 恒等）；这条归一管的是**直接调用**本函数的库用户：编码端
+  // （Encoder::new）用的是量化网格上的值，解码端也必须同样归一，
+  // 否则非网格参数两端算出不同子集（实测 46/300 失配）。
+  let qc = match quantized_pair(c, delta) {
+    Err(e) => raise e
+    Ok(pair) => pair
+  }
+  let dist = match robust_soliton_checked(k, qc.0, qc.1) {
     Ok(d) => d
     Err(e) => raise e
   }

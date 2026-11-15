@@ -103,6 +103,46 @@ pub fn dequantize_param(q : Int32) -> Double {
 }
 
 ///|
+/// 把 `(c, delta)` 归一到**容器头可表示**的量化网格（LT5，2026-11-15 审计）。
+///
+/// 容器头把这两个参数量化成百分之一（`quantize_param`），解码端只能拿到
+/// `dequantize_param` 的像。因此「编解码两个方向都过同一个量化函数」
+/// （API.md §8）必须在**编码入口**兑现：`Encoder::new` 与 `decode_with_stats`
+/// 都先过这一对函数再建分布，两端才会对非网格参数（`c=0.014` → `0.01`）
+/// 算出同一个子集。修复前只有解码端过了量化，编码端用原始值 —— 实测
+/// K=200、c=0.014 的容器往返有 46/300 个 index 子集失配，decode 报
+/// CorruptionDetected 而 encode 一声不吭。
+///
+/// 网格点参数（任何 `q/100` 的双精度值，含默认 `0.1`/`0.5`）经此函数逐位
+/// 不变（`quantize(dequantize(q)) == q` 由全像测试锁定）。
+///
+/// 非有限值显式拒绝：`quantize_param` 对 `inf` 会经 `.to_int()` 的饱和与
+/// 钳位产出 255 —— 若不拦，`c=inf` 会被静默吸成 `2.55`（一个合法的分布
+/// 参数）。`nan`/`inf` 必须按原值报 `DistributionNotNormalized`。
+///
+/// 归一后落到像外的值（`c < 0.005` → `c_q=0`，即 0）由
+/// `robust_soliton_checked` 的域检查拒绝 —— 数学层
+/// （`robust_distribution` / `sample_degree`）不受影响，仍接受任意
+/// `c > 0`；只有进入容器系统的入口归一。
+fn quantized_pair(
+  c : Double,
+  delta : Double,
+) -> Result[(Double, Double), LtError] {
+  if c.is_nan() || c.is_inf() {
+    return Err(LtError::DistributionNotNormalized(c))
+  }
+  if delta.is_nan() || delta.is_inf() {
+    return Err(LtError::DistributionNotNormalized(delta))
+  }
+  Ok(
+    (
+      dequantize_param(quantize_param(c)),
+      dequantize_param(quantize_param(delta)),
+    ),
+  )
+}
+
+///|
 /// 大端写 u32。
 fn put_u32(out : Array[Byte], v : Int32) -> Unit {
   let u = v.to_uint()
