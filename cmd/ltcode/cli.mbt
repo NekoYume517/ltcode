@@ -155,6 +155,58 @@ pub fn guard_overhead(k : Int32, overhead : Double) -> String {
 }
 
 ///|
+/// 单点符号操作总量的上限（LT6，2026-11-15 审计）。
+///
+/// LT-B 的三个上限都是**独立**的：`trials ≤ 1e7`、`received = K×overhead
+/// ≤ 4e6`、`symbol-len ≤ 1MB`。但一次度量命令的真实成本是三者的**乘积**：
+/// `trials × received` 次符号操作（每次又是 O(K) 的建表 + O(度) 的编解码，
+/// 单符号成本实测随 K 超线性增长）。三个因子各自域内时乘积可以到
+/// `1e7 × 4e6 = 4e13`，实测与外推都是**天级挂死**：
+///
+/// - `simulate --symbols 1000000 --overhead 1.2 --trials 10`
+///   （1.2e7 符号操作）：debug 构建 > 17 min 不终止；
+/// - `simulate --symbols 1000 --overhead 1.2 --trials 10000000`
+///   （1.2e10）：按实测 3.67 s / 6e5 外推 ≈ 20 小时。
+///
+/// 守卫量是 **`trials × received`（单点的符号操作总量）**，不是其中任何
+/// 一个因子 —— K=1e6/trials=1（1.2e6）与 K=1000/trials=1e7（1.2e10）必须
+/// 给出相反的答案。
+///
+/// 取值依据（release native 实测，`LT6-trials-x-K-timing.log`）：
+/// 单符号成本随 K 超线性 —— K=1000 → 6.1 µs、K=10000 → 19.9 µs、
+/// K=100000 → 215 µs、K=1e6 → ≥1630 µs（单 trial 1961 s 未跑完被杀）。
+/// 上限 `1e6`：
+/// - README / DEMO 的全部既有命令每点 ≤ 1e6（`curve` 每点
+///   2000×500=1e6、`distcmp` 4e5、`simulate` 单点 1e6），放行不卡边界；
+/// - 上限内最坏组合（K≈8e5~1e6 的单 trial，或 K=1e5 的少量 trial）
+///   按实测外推 ≈ 3~25 分钟，**不存在**天级挂死的合法组合；
+/// - 无守卫时的天文组合（1e7 trials × 4e6 received = 4e13 符号操作，
+///   数十万年）在用法层就报错。与 `guard_overhead` 同形状：空串 = 放行，
+///   非空 = 用法错误文案（可断言）。
+pub const LT_MAX_WORK : Int64 = 1_000_000L
+
+///|
+/// `--trials × received` 的乘积守卫（LT6，见 `LT_MAX_WORK`）。
+///
+/// `received` 用 `received_count_checked`（与 `guard_overhead` 同一公式）。
+/// 非有限 overhead 在这条路径上给出 received=0 → 放行，由同循环里
+/// **先跑**的 `guard_overhead` 拦下 —— 本函数只管乘积，不重复非有限检查。
+/// 乘积用 Int64：两个因子各自可达 Int32 上限，Int32 乘法会回绕
+/// （2147483647 × 2147483647 ≈ 4.6e18 > Int32 上限）。
+pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String {
+  if trials <= 0 {
+    return ""
+  }
+  let received = received_count_checked(k, overhead)
+  let work = trials.to_int64() * received.to_int64()
+  if work > LT_MAX_WORK {
+    "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
+  } else {
+    ""
+  }
+}
+
+///|
 /// 单符号长度守卫。
 pub fn guard_symbol_len(symbol_len : Int32) -> String {
   if symbol_len > LT_MAX_SYMBOL_LEN {
@@ -228,6 +280,12 @@ fn check_metric_magnitudes(
     let oh_msg = guard_overhead(k, oh)
     if !oh_msg.is_empty() {
       return oh_msg
+    }
+    // LT6：乘积守卫 —— 单点 `trials × received` 的符号操作总量。
+    // guard_overhead 已拦非有限值，这里只看量级。
+    let work_msg = guard_work(trials, k, oh)
+    if !work_msg.is_empty() {
+      return work_msg
     }
   }
   ""

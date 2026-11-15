@@ -495,9 +495,12 @@ pub fn unknown_arg_error(args : Args, cmd : String) -> String   // 空串 = 干�
 pub const LT_MAX_TRIALS      : Int32 = 10_000_000
 pub const LT_MAX_RECEIVED    : Int32 = 4_000_000
 pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
+/// LT6（2026-11-15 审计）：单点 `trials × received` 的符号操作总量上限
+pub const LT_MAX_WORK        : Int64 = 1_000_000
 
 pub fn guard_trials(trials : Int32) -> String                       // 空串 = 放行
 pub fn guard_overhead(k : Int32, overhead : Double) -> String
+pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String
 pub fn guard_symbol_len(symbol_len : Int32) -> String
 /// LT2：`--symbols` 的域上界（与 encode 同一个上限，文案不同）
 pub fn metric_symbols_bound_msg(k : Int32) -> String
@@ -506,6 +509,21 @@ pub fn metric_symbols_bound_msg(k : Int32) -> String
 `guard_overhead` 的守卫量是 **`K × overhead`（收到的符号数）**，不是
 overhead 本身 —— 同一个 overhead 在 K=10 时无害、K=1<<20 时致命。它也显式
 挡 `nan` / `inf`（`nan > 上限` 为 false，会静默放行）。
+
+`guard_work`（LT6，2026-11-15 审计）的守卫量是 **`trials × received`
+（单点的符号操作总量）**。LT-B 的三个上限是**独立**的，乘积没有守卫：
+每个因子都在域内时，`simulate --symbols 1000000 --overhead 1.2
+--trials 10`（1.2e7 符号操作）debug 构建 > 17 分钟不终止，
+`simulate --symbols 1000 --overhead 1.2 --trials 10000000`（1.2e10）
+外推 ≈ 20 小时。上限 `1e6` 的依据（release native 实测，单符号成本随
+K 超线性：K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、
+K=1e6 → ≥1630 µs，单 trial 1961 s 未跑完）：
+
+- README / DEMO 的全部既有命令每点 ≤ 1e6（`curve` 每点 2000×500=1e6、
+  `distcmp` 4e5、`simulate` 单点 1e6），放行不卡边界；
+- 上限内最坏组合按实测外推 ≈ 3~25 分钟，不存在天级挂死的合法组合；
+- 注意域内 ≠ 一律放行：K=1e6、overhead=1.2、trials=1（1.2e6）也在这条
+  守卫上被拒 —— 33 分钟级的单次作业超出预算，降 overhead 或分批。
 
 修复前这四处都是挂死（实测 40~60 秒不终止，非报错、非退出）：`--overhead
 2500000`、`--overhead 1e300`、`--trials 2147483647`、`--symbol-len
