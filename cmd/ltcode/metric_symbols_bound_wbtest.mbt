@@ -46,10 +46,10 @@
 /// `--symbols` + 上界，不把话推给「源」或输入文件。
 test "LT2: metric commands reject --symbols above max_source_symbols" {
   let limit = @lib.max_source_symbols()
-  // 域内（含边界）静默。注意域内 ≠ 一律放行：量级由 LT6 的乘积守卫
-  // （trials × received ≤ LT_MAX_WORK）另管 —— K=limit、oh=1.0、trials=1
-  // 的组合（work = 1048576 > 1e6）现在由 guard_work 拒，这里放行侧取
-  // 乘积内的等价组合锁「K 到达上界本身不是用法错误」。
+  // 域内（含边界）静默。注意域内 ≠ 一律放行：量级由 LT6/LT7 的
+  // trials × max(K,received) ≤ LT_MAX_WORK 另管。K=limit、oh=1.0、trials=1
+  // 的 work=1048576 < 2e6，本可放行；这里沿用 oh=0.9 锁「K 到上界本身
+  // 不是用法错误」，同时覆盖小数 received。
   inspect(check_metric_magnitudes(1, [1.0], 1, 4), content="")
   let under_work = (limit.to_double() * 0.9).to_int()
   inspect(check_metric_magnitudes(limit, [0.9], 1, 4), content="")

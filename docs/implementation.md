@@ -590,3 +590,27 @@ K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、K=1e6 →
   simulate 793/1000、distcmp 162/200、seed-50000 对照、encode 13243
   字节、tight 51 missing、K=10/seed=3 的 6 missing（1,2,5,6,7,8）、
   `--symbols 1048577` 的 exit 2 文案 —— 全部逐字一致。
+
+## 15. 2026-11-16 轮对抗审计：LT7 固定初始化绕过工作预算
+
+LT6 的 `trials × received` 只计算了编码符号操作，却漏掉每次试验必然发生的
+固定成本：`run_trial` 先生成 K 个源符号，`Encoder::new` 与
+`decode_with_stats` 又各构造一次 O(K) 分布表。因而
+`simulate --symbols 1000 --overhead 0.0001 --trials 10000000` 的 received=0、
+旧 work=0，所有独立上限与乘积守卫都放行，但实际要执行 1e10 次源符号初始化
+量级。release native 的小规模实测同样呈线性：received=0 时 100/1000/5000
+trials 分别耗时 209/610/2876ms；按最后一点外推，上述合法命令约 1.6 小时。
+
+修复把每轮工作量改为 `max(K, received)`，总预算仍是
+`trials × max(K, received) <= 2e6`。overhead≥1 时公式与原式完全相同，因此
+README/DEMO 的全部合法锚点及其确定性数字不变；overhead<1（含 received=0）
+才补收固定初始化成本。`metric_work_guard_wbtest.mbt` 新增零 received、小数
+received 的上界±1，以及全部文档锚点三组回归：修复前 188 条中 2 条红，修复后
+188/188 绿；真实 CLI 的危险组合在 simulate/curve/distcmp 三条路径均立即
+exit 2，不再进入试验循环。
+
+本轮另扫过 K=1/2/3 的全部 76500 组合法量化参数（c_q=1..255、
+delta_q=1..100）：分布均归一、PMF/CDF 有限且单调、采样域正确。容器篡改矩阵
+覆盖各头部字段、index/body、截断和尾部追加；结构错误均 exit 3，合法零符号
+容器如实 exit 1，失败路径不写也不改输出文件。`distcmp` 的三种分布仍按各自
+实验点计预算：实测并非固定三倍耗时，既有契约也是逐点上限，未机械乘三修改。

@@ -132,6 +132,10 @@ moon run cmd/ltcode -- encode --input examples/payload.bin \
 moon run cmd/ltcode -- decode --input examples/payload.ltc --out out.bin
 ```
 
+`encode` 省略 `--out` 时写入 `<input>.ltc`，`decode` 省略时写入
+`decoded.bin`；三条度量命令省略 `--trials` 时默认 100，省略
+`--symbol-len` 时默认 4。
+
 实测输出：
 
 ```
@@ -452,12 +456,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 185 tests, all pass
+moon test             # 188 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（185 条，按 `^test "` 计数）：
+测试分布（188 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -472,7 +476,7 @@ moon build --target wasm
 | `metrics_test.mbt` | 12 | 格式化、可复现、分布对照方向、零试验不产生 NaN |
 | `metric_guard_test.mbt` | 8 | `--trials`/`--overhead`/`--symbol-len` 量级守卫（2026-11-10 审计） |
 | `metric_symbols_bound_wbtest.mbt` | 3 | 度量侧 `--symbols` 的域上界 + 否决顺序 + 另三条量级守卫未回退（2026-11-13 审计） |
-| `metric_work_guard_wbtest.mbt` | 3 | `--trials × received` 的乘积守卫（LT_MAX_WORK）与边界精确性（2026-11-15 审计） |
+| `metric_work_guard_wbtest.mbt` | 6 | `trials × max(K,received)` 工作预算；零/小数 received、上界±1 与全部文档锚点（2026-11-16 审计） |
 | `container_test.mbt` | 11 | 头部逐字节锁定、往返、截断拒绝、`BadMagic`/`UnsupportedVersion`、零符号容器、自描述、校验和拦篡改 |
 | `header_guard_test.mbt` | 10 | `count`/`payload_len` 无符号域校验、`symbol_len` 回绕防护（2026-11-10 审计）、`c_q`/`delta_q` 域校验（2026-11-13 审计） |
 | `count_zero_symbol_len_test.mbt` | 4 | 零符号容器的 `symbol_len` 域（43 字节边界两侧）、K=93/94、`symbol_len` 与 payload 长短无关（2026-11-11 审计） |

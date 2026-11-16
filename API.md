@@ -472,11 +472,15 @@ LT-G 又修了一次同类错位：`K` 变负曾报 `empty source`（把"头部�
 
 ```
 ltcode encode   --input <file> --symbols K [--seed S] [--count N] [--out <file>]
-ltcode decode   --input <file> --out <file> [--symbols K] [--seed S]
-ltcode simulate --symbols K --overhead O --trials T [--seed S] [--symbol-len N]
-ltcode curve    --symbols K --overheads a,b,c --trials T [--seed S] [--symbol-len N]
-ltcode distcmp  --symbols K --overhead O --trials T [--seed S] [--symbol-len N]
+ltcode decode   --input <file> [--out <file>] [--symbols K] [--seed S]
+ltcode simulate --symbols K --overhead O [--trials T] [--seed S] [--symbol-len N]
+ltcode curve    --symbols K --overheads a,b,c [--trials T] [--seed S] [--symbol-len N]
+ltcode distcmp  --symbols K --overhead O [--trials T] [--seed S] [--symbol-len N]
 ```
+
+默认值：`encode --out` 是 `<input>.ltc`，`decode --out` 是 `decoded.bin`；
+三条度量命令省略 `--trials` 时均为 100，`--symbol-len` 省略时为 4。
+这些默认值均已用真实 native 命令复核（2026-11-16）。
 
 退出码：**0** 成功 / **1** 解码失败（数据不足）/ **2** 用法错误 / **3** 输入错误
 （含容器损坏）。

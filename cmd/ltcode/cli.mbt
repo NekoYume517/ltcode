@@ -286,7 +286,7 @@ fn check_metric_magnitudes(
     if !oh_msg.is_empty() {
       return oh_msg
     }
-    // LT6：乘积守卫 —— 单点 `trials × received` 的符号操作总量。
+    // LT6/LT7：单点工作预算，含每轮 O(K) 固定初始化。
     // guard_overhead 已拦非有限值，这里只看量级。
     let work_msg = guard_work(trials, k, oh)
     if !work_msg.is_empty() {

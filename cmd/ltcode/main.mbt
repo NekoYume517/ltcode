@@ -24,13 +24,15 @@ fn usage() -> String {
   sb.write_string("\n")
   sb.write_string("  ltcode encode   --input <file> --symbols K [--seed S] ")
   sb.write_string("[--count N] [--out <file>]\n")
-  sb.write_string("  ltcode decode   --input <file> --out <file> ")
+  sb.write_string("  ltcode decode   --input <file> [--out <file>] ")
   sb.write_string("[--symbols K] [--seed S]\n")
-  sb.write_string("  ltcode simulate --symbols K --overhead O --trials T ")
+  sb.write_string("  ltcode simulate --symbols K --overhead O [--trials T] ")
   sb.write_string("[--seed S] [--symbol-len N]\n")
-  sb.write_string("  ltcode curve    --symbols K --overheads a,b,c --trials T ")
+  sb.write_string(
+    "  ltcode curve    --symbols K --overheads a,b,c [--trials T] ",
+  )
   sb.write_string("[--seed S] [--symbol-len N]\n")
-  sb.write_string("  ltcode distcmp  --symbols K --overhead O --trials T ")
+  sb.write_string("  ltcode distcmp  --symbols K --overhead O [--trials T] ")
   sb.write_string("[--seed S] [--symbol-len N]\n")
   sb.write_string("\n")
   // 可解性验算的边界必须出现在 help 里（LT1，2026-11-12 followup）：
