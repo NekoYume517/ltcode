@@ -523,7 +523,7 @@ pub fn unknown_arg_error(args : Args, cmd : String) -> String   // 空串 = 干�
 pub const LT_MAX_TRIALS      : Int32 = 10_000_000
 pub const LT_MAX_RECEIVED    : Int32 = 4_000_000
 pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
-/// LT6（2026-11-15 审计）：单点 `trials × received` 的符号操作总量上限
+/// LT6/LT7：单点 `trials × max(K, received)` 的工作预算上限
 pub const LT_MAX_WORK        : Int64 = 2_000_000
 
 pub fn guard_trials(trials : Int32) -> String                       // 空串 = 放行
@@ -538,14 +538,23 @@ pub fn metric_symbols_bound_msg(k : Int32) -> String
 overhead 本身 —— 同一个 overhead 在 K=10 时无害、K=1<<20 时致命。它也显式
 挡 `nan` / `inf`（`nan > 上限` 为 false，会静默放行）。
 
-`guard_work`（LT6，2026-11-15 审计）的守卫量是 **`trials × received`
-（单点的符号操作总量）**。LT-B 的三个上限是**独立**的，乘积没有守卫：
-每个因子都在域内时，`simulate --symbols 1000000 --overhead 1.2
---trials 10`（1.2e7 符号操作）debug 构建 > 17 分钟不终止，
-`simulate --symbols 1000 --overhead 1.2 --trials 10000000`（1.2e10）
-外推 ≈ 20 小时。上限 `2e6` 的依据（release native 实测，单符号成本随
-K 超线性：K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、
-K=1e6 → ≥1630 µs，单 trial 1961 s 未跑完）：
+`guard_work`（LT6/LT7）的守卫量是 **`trials × max(K, received)`**。
+LT-B 的三个上限是**独立**的，乘积没有守卫：每个因子都在域内时，
+`simulate --symbols 1000000 --overhead 1.2 --trials 10`（1.2e7 符号操作）
+debug 构建 > 17 分钟不终止，`simulate --symbols 1000 --overhead 1.2
+--trials 10000000`（1.2e10）外推 ≈ 20 小时。
+
+LT7（2026-11-16 审计）补上 received=0 / 小数 received 的镜像缺口：每个
+trial 都先执行 `random_sources(K)`，并构造编解码两侧的 O(K) 分布表；只算
+`trials×received` 会把 `K=1000, overhead=0.0001, trials=10000000` 记成 0，
+实际却是 1e10 次源符号初始化量级。release native 实测同一 K、received=0 时
+100/1000/5000 trials 为 209/610/2876ms，按最后一点外推上限组合约 1.6 小时。
+每轮取 `max(K, received)` 后，overhead≥1 的既有预算值完全不变，而 0/小数
+received 不再绕过固定成本；上界±1 与 README/DEMO 的全部度量锚点均有回归。
+
+上限 `2e6` 的依据（release native 实测，单符号成本随 K 超线性：
+K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、K=1e6 →
+≥1630 µs，单 trial 1961 s 未跑完）：
 
 - 下界锚点是 README 承诺的复现命令 `simulate --symbols 1000 --overhead
   1.2 --trials 1000` = **1.2e6**（文档数字 793/1000，PLAN 指定的样本量

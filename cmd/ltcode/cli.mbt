@@ -168,9 +168,10 @@ pub fn guard_overhead(k : Int32, overhead : Double) -> String {
 /// - `simulate --symbols 1000 --overhead 1.2 --trials 10000000`
 ///   （1.2e10）：按实测 3.67 s / 6e5 外推 ≈ 20 小时。
 ///
-/// 守卫量是 **`trials × received`（单点的符号操作总量）**，不是其中任何
-/// 一个因子 —— K=1e6/trials=1（1.2e6）与 K=1000/trials=1e7（1.2e10）必须
-/// 给出相反的答案。
+/// LT6 的守卫量是 **`trials × received`（单点的符号操作总量）**；LT7 补齐
+/// 每轮固定初始化后改为 `trials × max(K, received)`。它不是其中任何一个
+/// 独立因子 —— K=1e6/trials=1（1.2e6）与 K=1000/trials=1e7（1.2e10）必须
+/// 给出相反的答案；received=0 也不能把 O(trials×K) 初始化记成零。
 ///
 /// 取值依据（release native 实测，`LT6-trials-x-K-timing.log`）：
 /// 单符号成本随 K 超线性 —— K=1000 → 6.1 µs、K=10000 → 19.9 µs、
@@ -187,11 +188,13 @@ pub fn guard_overhead(k : Int32, overhead : Double) -> String {
 pub const LT_MAX_WORK : Int64 = 2_000_000L
 
 ///|
-/// `--trials × received` 的乘积守卫（LT6，见 `LT_MAX_WORK`）。
+/// 单点工作预算守卫（LT6 / LT7，见 `LT_MAX_WORK`）。
 ///
 /// `received` 用 `received_count_checked`（与 `guard_overhead` 同一公式）。
-/// 非有限 overhead 在这条路径上给出 received=0 → 放行，由同循环里
-/// **先跑**的 `guard_overhead` 拦下 —— 本函数只管乘积，不重复非有限检查。
+/// 每个 trial 即使一个编码符号都不收，也要生成 K 个源符号并构造编解码
+/// 两侧的 O(K) 分布表，因此每轮预算是 `max(K, received)`，不能把 received=0
+/// 记成零成本。overhead>=1 时它仍为 received，README/DEMO 锚点不变。
+/// 非有限 overhead 由同循环里**先跑**的 `guard_overhead` 拦下。
 /// 乘积用 Int64：两个因子各自可达 Int32 上限，Int32 乘法会回绕
 /// （2147483647 × 2147483647 ≈ 4.6e18 > Int32 上限）。
 pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String {
@@ -199,9 +202,10 @@ pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String {
     return ""
   }
   let received = received_count_checked(k, overhead)
-  let work = trials.to_int64() * received.to_int64()
+  let per_trial = if k > received { k } else { received }
+  let work = trials.to_int64() * per_trial.to_int64()
   if work > LT_MAX_WORK {
-    "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
+    "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
   } else {
     ""
   }

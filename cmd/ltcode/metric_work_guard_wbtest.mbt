@@ -8,8 +8,8 @@
 /// （K=1e6 单 trial 600 s 量级），1.2e7 是小时级挂死。K=1000、
 /// trials=1e7（ trials 上限的合法值）同样外推出 ~20 小时。
 ///
-/// 守卫量取 **trials × received**（单点的符号操作总量），上限
-/// `LT_MAX_WORK = 10_000_000`：README/DEMO 的全部既有命令每点 ≤ 1e6
+/// 守卫量取 **trials × max(K, received)**（LT7 补入每轮 O(K) 初始化），上限
+/// `LT_MAX_WORK = 2_000_000`：README/DEMO 的全部既有命令每点 ≤ 1.2e6
 /// （放行有余量），最坏合法组合（K=1e6、trials=1）≈ 1.2e6 仍是分钟级
 /// 而不是天级。文案与 `guard_overhead` 同形状（可断言，不只打印）。
 ///
@@ -59,4 +59,42 @@ test "LT6: documented commands still pass and the boundary is exact" {
   // 边界 +1：2002000 > 2e6 拒
   let d = check_metric_magnitudes(1000, [2.0], 1001, 4)
   assert_true(!d.is_empty())
+}
+
+///|
+/// LT7：received=0 不等于零成本。每个 trial 仍生成 K 个源符号并构造
+/// 编解码两侧的 O(K) 分布表；只算 trials×received 会把这部分记成零。
+test "LT7: zero received still spends trials times K setup work" {
+  // received=floor(1000×0.0001)=0，旧守卫的 work=0，因而放行 1e7 次
+  // O(K) 初始化。release 实测 5000 trials=2.876s，此外推约 1.6 小时。
+  let msg = check_metric_magnitudes(1000, [0.0001], 10000000, 4)
+  assert_true(!msg.is_empty())
+}
+
+///|
+/// 小数 received 也有同族的固定成本；上界按 trials×max(K,received) 精确判定。
+test "LT7: fractional received boundary accounts for per-trial setup" {
+  // K=1000、received=500：恰好 2000 trials 是 2e6，放行。
+  let at_limit = check_metric_magnitudes(1000, [0.5], 2000, 4)
+  assert_true(at_limit.is_empty())
+  // 旧守卫只算 2001×500=1.0005e6，会错误放行；固定成本是 2.001e6。
+  let above_limit = check_metric_magnitudes(1000, [0.5], 2001, 4)
+  assert_true(!above_limit.is_empty())
+}
+
+///|
+/// 预算公式改变不得误伤 README/DEMO 已承诺可复现的全部度量锚点。
+test "LT7: every documented metric command remains inside the work budget" {
+  for oh in [1.0, 1.1, 1.15, 1.18, 1.2, 1.25, 1.3, 1.5, 2.0] {
+    let msg = check_metric_magnitudes(1000, [oh], 500, 4)
+    assert_true(msg.is_empty())
+  }
+  for oh in [1.0, 1.2] {
+    let msg = check_metric_magnitudes(1000, [oh], 1000, 4)
+    assert_true(msg.is_empty())
+  }
+  for oh in [1.2, 1.3, 1.5] {
+    let msg = check_metric_magnitudes(1000, [oh], 200, 4)
+    assert_true(msg.is_empty())
+  }
 }
