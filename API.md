@@ -334,6 +334,13 @@ pub fn payload_hash(data : Bytes) -> UInt64
 
 /// 注意第二个数据参数是**原始 payload 字节**（不是 length）：
 /// 长度与哈希都由它自己算，避免"长度与哈希可以对不上"。
+///
+/// 前置校验（`raise`；旨在「写出去必须读得回来」）：
+/// - `payload.length() > K × symbol_len` → `InvalidHeaderField`；
+/// - 符号体长度 ≠ `symbol_len` → `SymbolLengthMismatch`；
+/// - `c` / `delta` 非有限（`nan` / `inf`）→ `DistributionNotNormalized`，
+///   与 `Encoder::new` / `decode_with_stats` **同一份判断**
+///   （LT24，2026-11-17-b）。
 pub fn pack_container(block : SourceBlock, seed : UInt64, payload : Bytes,
   c : Double, delta : Double, symbols : Array[Symbol]) -> Bytes
 

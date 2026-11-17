@@ -132,15 +132,48 @@ pub fn dequantize_param(q : Int32) -> Double {
 ///   `DistributionNotNormalized` 的 "sum=0" 文案去指一张用户没写过的分布表）。
 ///
 /// 想**拒绝**而不是钳位越界参数的调用方请用 `Encoder::try_new`。
-fn quantized_pair(
-  c : Double,
-  delta : Double,
-) -> Result[(Double, Double), LtError] {
+
+///|
+/// 非有限参数的**唯一**闸门（LT24，2026-11-17-b 审计）。
+///
+/// 判断只有一份，四个「写/读参数」的入口共用：`Encoder::new`、
+/// `Encoder::try_new`（经下面两个 `quantized_pair*`）、`decode_with_stats`
+/// （同前）与 `pack_container`。
+///
+/// 为什么必须拦（不是风格问题）：`quantize_param` 对 `inf` 会经 `.to_int()`
+/// 的饱和再钳到 `255`，对 `nan` 给出 `0`。于是
+/// - `c = inf` 被静默写成 `c_q = 255`，而 `c_q = 255` 在 `unpack_container`
+///   的**合法域内** —— 容器读得回来，`decode` 用 `c = 2.55` 去解：用户要
+///   `inf`，拿到 2.55，全链路一声不吭；
+/// - `c = nan` → `c_q = 0`、`delta = inf` → `delta_q = 255`：写出**读不回**
+///   的头。
+///
+/// 修复前 `pack_container` 是唯一没过这道闸门的入口（另外两个都过），于是
+/// 上面两种形态都能从**公开库入口**造出来 —— 与 LT20（payload/符号体）与
+/// LT23（`payload_len = 0`）同族：写之前不判，写出来的东西要么读不回，要么
+/// 读回来是**别的参数**。
+///
+/// 返回 `Result` 而不是直接 `raise`：两个 `quantized_pair*` 是 `Result`
+/// 风格、`pack_container` 是 `raise` 风格，而闸门只能有一份，因此各自把
+/// `Err` 转成自己的形状。
+fn non_finite_param(c : Double, delta : Double) -> Result[Unit, LtError] {
   if c.is_nan() || c.is_inf() {
     return Err(LtError::DistributionNotNormalized(c))
   }
   if delta.is_nan() || delta.is_inf() {
     return Err(LtError::DistributionNotNormalized(delta))
+  }
+  Ok(())
+}
+
+///|
+fn quantized_pair(
+  c : Double,
+  delta : Double,
+) -> Result[(Double, Double), LtError] {
+  match non_finite_param(c, delta) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
   }
   let c_q = quantize_param(c)
   if c_q < 1 {
@@ -169,11 +202,9 @@ fn quantized_pair_strict(
   c : Double,
   delta : Double,
 ) -> Result[(Double, Double), LtError] {
-  if c.is_nan() || c.is_inf() {
-    return Err(LtError::DistributionNotNormalized(c))
-  }
-  if delta.is_nan() || delta.is_inf() {
-    return Err(LtError::DistributionNotNormalized(delta))
+  match non_finite_param(c, delta) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
   }
   let c_q = (c * 100.0).round().to_int()
   if c_q < 1 || c_q > 255 {
@@ -339,6 +370,17 @@ pub fn pack_container(
     if s.data.length() != block.symbol_len {
       raise LtError::SymbolLengthMismatch(block.symbol_len, s.data.length())
     }
+  }
+  // ── 参数闸门（LT24，2026-11-17-b 审计）────
+  //
+  // 与 `Encoder::new` / `Encoder::try_new` / `decode_with_stats` 用**同一份**
+  // 判断（`non_finite_param`）。修复前这里是唯一漏掉它的入口：
+  // `c = inf` 被写成 `c_q = 255`（在 unpack 的合法域内 → 读得回来，但
+  // `decode` 用的是 2.55，参数被静默换掉）；`c = nan` / `delta = inf`
+  // 写出 `c_q = 0` / `delta_q = 255`（读不回）。
+  match non_finite_param(c, delta) {
+    Err(e) => raise e
+    Ok(_) => ()
   }
   let out : Array[Byte] = []
   for m in container_magic {
