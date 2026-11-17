@@ -77,3 +77,43 @@ fn random_received(
   }
   out
 }
+
+///|
+/// LT22（2026-11-17 审计）：`decode_success_rate` / `evaluate` 的试验种子是
+/// `seed + t`（`t = 0..trials-1`），因此在 `seed` 接近 `UInt64` 上限时会
+/// **回绕**：`--seed 18446744073709551615 --trials 3` 的三个试验种子依次是
+/// `MAX, 0, 1`，与「再跑一遍 seed 0 / seed 1」重合。
+///
+/// 不崩、结果仍然确定（回绕是 `UInt64` 的加法语义），但「种子区间」这件事在
+/// 极值处名不副实。修复前后行为**一致**，本轮只把这条语义写成断言 +
+/// 文档注记（API.md §10）：让下一个人知道 `--trials` 配合极值种子会
+/// 重复采样，而不是以为拿到了三个独立样本。
+test "LT22: seed + t wraps at the uint64 ceiling (recorded contract)" {
+  let k = 10
+  let overhead = 1.5
+  let trials = 3
+  let top : UInt64 = 18446744073709551615UL
+  let wrapped = decode_success_rate(k, overhead, trials, top, 4, 0.1, 0.5) catch {
+    e => abort("wrapped: \{error_text(e)}")
+  }
+  let s_top = decode_success_rate(k, overhead, 1, top, 4, 0.1, 0.5) catch {
+    e => abort("seed=MAX: \{error_text(e)}")
+  }
+  let s_zero = decode_success_rate(k, overhead, 1, 0UL, 4, 0.1, 0.5) catch {
+    e => abort("seed=0: \{error_text(e)}")
+  }
+  let s_one = decode_success_rate(k, overhead, 1, 1UL, 4, 0.1, 0.5) catch {
+    e => abort("seed=1: \{error_text(e)}")
+  }
+  // 三个 trial 分别等价于 seed MAX / 0 / 1 —— 这就是回绕的可观测后果
+  assert_eq(
+    wrapped.successes,
+    s_top.successes + s_zero.successes + s_one.successes,
+  )
+  assert_eq(wrapped.trials, 3)
+  // 非极值种子下三个 trial 是三个不同种子（正常情形不受影响）
+  let normal = decode_success_rate(k, overhead, 3, 100UL, 4, 0.1, 0.5) catch {
+    e => abort("normal: \{error_text(e)}")
+  }
+  assert_eq(normal.trials, 3)
+}

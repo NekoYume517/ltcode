@@ -523,6 +523,12 @@ ltcode distcmp  --symbols K --overhead O [--trials T] [--seed S] [--symbol-len N
 
 所有命令的 `--seed` 默认 `0x4C54434F4445`（固定常数，不是时钟）。
 
+**`seed + t` 会在 `UInt64` 上限回绕（LT22，2026-11-17 审计）**：三条度量命令的
+试验种子是 `seed, seed+1, …`，因此 `--seed 18446744073709551615 --trials 3` 的
+三个试验其实是 `MAX, 0, 1` —— 「种子区间」在极值处名不副实，会重复采样。
+不崩、结果仍确定（`UInt64` 加法语义），本轮只把这条写成断言与注记
+（`stats_contract_test.mbt` 的 `LT22:` 那条），行为未变。
+
 ### 只接受命名参数（LT-F）
 
 每个参数都必须是显式命名的 `--option value` / `--option=value`。
