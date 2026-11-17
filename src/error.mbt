@@ -50,6 +50,20 @@ pub(all) suberror LtError {
   /// 但哈希不符说明收到的符号本身是坏的（被改过、或混入了另一批），
   /// 再要多少也没用。理由与实测见 `docs/implementation.md` §5b。
   CorruptionDetected(UInt64, UInt64)
+  /// 参数（`c` / `delta`）越出容器头量化网格的可表示域（名字, 实际值,
+  /// 下界, 上界）。
+  ///
+  /// 容器头把这两个参数存成 `round(x*100)` 的单字节，因此可表示域是一张
+  /// **网格**而不是连续区间。修复前（LT11，2026-11-17 审计）越界的 `c` 被
+  /// 原样交给 `robust_soliton_checked`，于是用户收到
+  /// `degree distribution is not normalized: sum=0 (tolerance 1e-12)`
+  /// —— 他给的是 **c**，却被指到一张他从没写过的分布表上。这正是 LT3
+  /// （2026-11-13）在**容器头**路径上修掉的同一类错位，库入口一直没镜像。
+  ///
+  /// 四元组与 `InvalidHeaderField` 同形状：下界与上界都写出来，因为同一个
+  /// 变体既要报 "c=0.004 太小（量化为 0）"，也要报 "c=1000 太大（量化为
+  /// 100000，装不进一个字节）"。上界是**开区间**：`c=2.555` 量化成 256。
+  ParamOutOfImage(String, Double, Double, Double)
 }
 
 ///|
@@ -85,5 +99,7 @@ pub fn error_text(e : LtError) -> String {
       "trailing bytes after the last symbol: \{offset} bytes consumed of \{len}; this is not the same file that was packed"
     CorruptionDetected(actual, expected) =>
       "payload checksum mismatch: got 0x\{actual.to_string(radix=16)}, expected 0x\{expected.to_string(radix=16)}; the received symbols are corrupted or mixed from another encoding"
+    ParamOutOfImage(name, value, low, high) =>
+      "parameter \{name}=\{value} is outside the container's quantized grid [\{low}, \{high}): the header stores round(\{name}*100) in a single byte, so \{name} must round to an integer in that range"
   }
 }

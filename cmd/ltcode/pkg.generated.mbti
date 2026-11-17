@@ -2,7 +2,11 @@
 package "NekoYume517/ltcode/cmd/ltcode"
 
 // Values
+pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
+
 pub const LT_MAX_COUNT : Int32 = 1_000_000
+
+pub const LT_MAX_OVERHEAD_POINTS : Int32 = 64
 
 pub const LT_MAX_RECEIVED : Int32 = 4_000_000
 
@@ -14,9 +18,17 @@ pub const LT_MAX_WORK : Int64 = 2_000_000
 
 pub const LT_MAX_WORK_BYTES : Int64 = 2_000_000_000
 
+pub const LT_MAX_WORK_BYTES_TOTAL : Int64 = 20_000_000_000
+
+pub const LT_MAX_WORK_TOTAL : Int64 = 10_000_000
+
 pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
 
 pub fn accepted_keys(String) -> Array[String]
+
+pub fn container_bytes_bound_msg(Int32, Int32) -> String
+
+pub fn container_size_bytes(Int32, Int32) -> Int64
 
 pub fn default_count(Int32) -> Int32
 
@@ -28,11 +40,15 @@ pub fn explicit_count_overflow_msg(Int32) -> String
 
 pub fn guard_overhead(Int32, Double) -> String
 
+pub fn guard_overhead_points(Int32) -> String
+
 pub fn guard_symbol_len(Int32) -> String
 
 pub fn guard_trials(Int32) -> String
 
 pub fn guard_work(Int32, Int32, Double, Int32) -> String
+
+pub fn guard_work_total(Int32, Int32, Int64, Int64) -> String
 
 pub fn join_ints(Array[Int32]) -> String
 

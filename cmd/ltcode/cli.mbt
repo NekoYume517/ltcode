@@ -792,7 +792,7 @@ fn cmd_encode(args : Args) -> Unit {
     Ok(b) => b
   }
   let enc = match
-    @lib.Encoder::new(block, seed, @lib.default_c(), @lib.default_delta()) {
+    @lib.Encoder::try_new(block, seed, @lib.default_c(), @lib.default_delta()) {
     Err(e) => {
       arg_error("cannot build encoder: \{@lib.error_text(e)}")
       exit_bad_input()

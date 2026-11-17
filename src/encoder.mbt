@@ -42,8 +42,14 @@ pub(all) struct Encoder {
 /// 46 个方程在解码端失效，容器「encode 成功、decode 必然失败」。因此
 /// 编码入口与解码入口（`decode_with_stats`）都过同一个
 /// `quantize_param → dequantize_param`；网格点参数（含默认 `0.1`/`0.5`）
-/// 经此逐位不变。非有限值与量化后越域的值（`c < 0.005`）在此报错，
-/// 而不是产出解不开的容器。
+/// 经此逐位不变。非有限值在此报错，而不是产出解不开的容器。
+///
+/// **越界参数的处理（LT11 / LT12，2026-11-17 审计）**：`new` 是**钳位**
+/// 语义 —— 归一后的 `c_q` 落在 `[1, 255]`（delta 走 `[1, 100]`）就直接用
+/// 网格值，因此 `c=1000` 会变成 `2.55`（这个钳位是 2026-11-15 的容器像测试
+/// 锁定的既有契约）；落不进这个范围（`c=0.004` → `0`、`delta=1000`）报
+/// `ParamOutOfImage`，不再借「分布未归一化 sum=…」这张用户从没写过的表说话。
+/// 需要**拒绝**而不是钳位的调用方用 `Encoder::try_new`。
 pub fn Encoder::new(
   block : SourceBlock,
   seed : UInt64,
@@ -51,6 +57,33 @@ pub fn Encoder::new(
   delta : Double,
 ) -> Result[Encoder, LtError] {
   let qc = match quantized_pair(c, delta) {
+    Err(e) => return Err(e)
+    Ok(pair) => pair
+  }
+  match robust_soliton_checked(block.k, qc.0, qc.1) {
+    Ok(dist) => Ok({ seed, block, dist, })
+    Err(e) => Err(e)
+  }
+}
+
+///|
+/// **严格**版构造：参数必须已经在容器头的量化网格上（LT12，2026-11-17 审计）。
+///
+/// `Encoder::new` 对越界参数做**钳位**（`c=1000` → `c_q=255` → `2.55`），
+/// 这个行为是既有契约（2026-11-15 的容器像测试锁定），保留；但它意味着
+/// 「你要求 c=1000，实际用了 2.55」这件事只能从文档里读到。需要一条**能
+/// 报错的路**的调用方用本函数：严格域是 `c ∈ [0.005, 2.555)`、
+/// `delta ∈ [0.005, 1.005)`，越界一律 `ParamOutOfImage`，绝不静默换值。
+///
+/// 两者对网格点参数（任何 `q/100`，含默认 `0.1`/`0.5`）逐位相同 —— 因此
+/// 用 `try_new` 造出来的编码器与 `new` 造出来的容器**必然互解**。
+pub fn Encoder::try_new(
+  block : SourceBlock,
+  seed : UInt64,
+  c : Double,
+  delta : Double,
+) -> Result[Encoder, LtError] {
+  let qc = match quantized_pair_strict(c, delta) {
     Err(e) => return Err(e)
     Ok(pair) => pair
   }

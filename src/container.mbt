@@ -120,10 +120,18 @@ pub fn dequantize_param(q : Int32) -> Double {
 /// 钳位产出 255 —— 若不拦，`c=inf` 会被静默吸成 `2.55`（一个合法的分布
 /// 参数）。`nan`/`inf` 必须按原值报 `DistributionNotNormalized`。
 ///
-/// 归一后落到像外的值（`c < 0.005` → `c_q=0`，即 0）由
-/// `robust_soliton_checked` 的域检查拒绝 —— 数学层
-/// （`robust_distribution` / `sample_degree`）不受影响，仍接受任意
-/// `c > 0`；只有进入容器系统的入口归一。
+/// ## 两条入口：**钳位**（本函数）与**严格**（`quantized_pair_strict`）
+///
+/// LT11（2026-11-17 审计）：本函数是**钳位**语义 —— `quantize_param` 把
+/// 任意有限值夹到 `[0, 255]`，所以 `c=1000` 与 `c=inf` 一样落到 `2.55`。
+/// 修复前 `c=inf` 被显式拦下、`c=1000` 却静默通过，两条路径对同一句理由
+/// （「否则会被吸成 2.55」）给出了相反的处理。现在两边都成文：
+///
+/// - 钳位之后落进 `[1, 255]`（c）/ `[1, 100]`（delta）→ 直接用网格值；
+/// - 落到 `0` 或超出 delta 的上界 → `ParamOutOfImage`（**不再**借用
+///   `DistributionNotNormalized` 的 "sum=0" 文案去指一张用户没写过的分布表）。
+///
+/// 想**拒绝**而不是钳位越界参数的调用方请用 `Encoder::try_new`。
 fn quantized_pair(
   c : Double,
   delta : Double,
@@ -134,12 +142,48 @@ fn quantized_pair(
   if delta.is_nan() || delta.is_inf() {
     return Err(LtError::DistributionNotNormalized(delta))
   }
-  Ok(
-    (
-      dequantize_param(quantize_param(c)),
-      dequantize_param(quantize_param(delta)),
-    ),
-  )
+  let c_q = quantize_param(c)
+  if c_q < 1 {
+    return Err(LtError::ParamOutOfImage("c", c, 0.005, 2.555))
+  }
+  let delta_q = quantize_param(delta)
+  if delta_q < 1 || delta_q > 100 {
+    return Err(LtError::ParamOutOfImage("delta", delta, 0.005, 1.005))
+  }
+  Ok((dequantize_param(c_q), dequantize_param(delta_q)))
+}
+
+///|
+/// 严格版：参数必须**已经在网格上**，越界一律 `ParamOutOfImage`，不做钳位
+/// （LT12，2026-11-17 审计）。
+///
+/// 判据是 `round(x*100)` 的原始值（钳位之前）落在 `[1, 255]`（c）/
+/// `[1, 100]`（delta）内。因此严格域是 **半开区间**：`c ∈ [0.005, 2.555)`
+/// （`0.005*100` 在 binary64 里恰好是 `0.5`，靠 half-away-from-zero 进位到
+/// 1；`2.555*100 = 255.50000000000003` 进位到 256，超出像）、
+/// `delta ∈ [0.005, 1.005)`。
+///
+/// 钳位版与严格版对**网格点**逐位相同（都取 `q/100`），只在越界输入上
+/// 分歧：钳位版给出 `2.55`，严格版给出 `Err`。
+fn quantized_pair_strict(
+  c : Double,
+  delta : Double,
+) -> Result[(Double, Double), LtError] {
+  if c.is_nan() || c.is_inf() {
+    return Err(LtError::DistributionNotNormalized(c))
+  }
+  if delta.is_nan() || delta.is_inf() {
+    return Err(LtError::DistributionNotNormalized(delta))
+  }
+  let c_q = (c * 100.0).round().to_int()
+  if c_q < 1 || c_q > 255 {
+    return Err(LtError::ParamOutOfImage("c", c, 0.005, 2.555))
+  }
+  let delta_q = (delta * 100.0).round().to_int()
+  if delta_q < 1 || delta_q > 100 {
+    return Err(LtError::ParamOutOfImage("delta", delta, 0.005, 1.005))
+  }
+  Ok((dequantize_param(c_q), dequantize_param(delta_q)))
 }
 
 ///|

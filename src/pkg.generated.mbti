@@ -136,6 +136,7 @@ pub(all) suberror LtError {
   InvalidHeaderField(String, UInt64, UInt64, UInt64)
   TrailingBytes(UInt64, UInt64)
   CorruptionDetected(UInt64, UInt64)
+  ParamOutOfImage(String, Double, Double, Double)
 }
 
 // Types and methods
@@ -195,6 +196,7 @@ pub(all) struct Encoder {
 pub fn Encoder::new(SourceBlock, UInt64, Double, Double) -> Result[Self, LtError]
 pub fn Encoder::symbol(Self, Int32) -> Symbol
 pub fn Encoder::symbols(Self, Int32, Int32) -> Array[Symbol]
+pub fn Encoder::try_new(SourceBlock, UInt64, Double, Double) -> Result[Self, LtError]
 
 pub struct Ltrng {
   // private fields

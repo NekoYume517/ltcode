@@ -113,8 +113,11 @@ test "LT5: encoder rejects c below the representable floor (0.004)" {
     Ok(_) => "ok"
     Err(e) => error_text(e)
   }
-  // 量化后的 c=0 走 robust_soliton_checked 的 c>0 域检查
-  assert_true(outcome.contains("not normalized"))
+  // LT11（2026-11-17）：量化后为 0 的 c 现在报**参数**越界，不再借用
+  // 「度数分布未归一化 sum=0」—— 用户给的是 c，不是分布表。
+  assert_true(outcome.contains("parameter c=0.004"))
+  assert_true(outcome.contains("quantized grid"))
+  assert_true(!outcome.contains("not normalized"))
 }
 
 ///|
