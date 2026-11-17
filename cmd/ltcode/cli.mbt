@@ -188,7 +188,37 @@ pub fn guard_overhead(k : Int32, overhead : Double) -> String {
 pub const LT_MAX_WORK : Int64 = 2_000_000L
 
 ///|
-/// 单点工作预算守卫（LT6 / LT7，见 `LT_MAX_WORK`）。
+/// 单点的**字节级**工作预算上限（LT8，2026-11-17 审计）。
+///
+/// LT7 的 `LT_MAX_WORK` 是「符号操作」代理量，但每个符号操作实际处理
+/// `symbol_len` 个字节：`random_sources` 每字节一次 `next_below(256)`、
+/// `peel` 的 `acc` 每个收到符号一份 `symbol_len`、XOR 消去是 `symbol_len`
+/// 字节的拷贝。少了这一维，三个轴各自域内、乘积可以到
+/// `2e6 符号操作 × 1 MB = 2 TB`：
+///
+/// ```text
+/// simulate --symbols 100 --overhead 1.2 --trials 16666 --symbol-len 1048576
+/// ```
+///
+/// 四个守卫全放行（`trials=16667` 才被符号轴拦下），release native 实测
+/// 单 trial 2.9 s → 16666 trials 外推 **13.4 小时**不退出。
+///
+/// 取值依据（release native 实测，**不以墙钟为判据**，只用它校准量级）：
+/// `symbol-len` 阶梯 4 / 1024 / 16384 / 65536 @ K=100、trials=20 分别是
+/// 309 / 127 / 985 / 3481 ms（近线性，斜率 ≈ 0.05 ms/KB·trial），
+/// `symbol-len=1048576` 实测 2.88 s/trial（≈ 1.4 GB 的字节级工作量）。
+/// 取 `2e9` 字节级操作 ⇒ 最大合法点约 **40–45 s**；同时它给默认
+/// `symbol-len=4` 的全部文档命令留出两个数量级余量
+/// （DEMO 的 `curve` 9 点 × 500 才 2.3e7）。
+///
+/// 单位与 `LT_MAX_WORK` **不同**（字节 vs 符号操作），所以是两条独立的轴：
+/// 把字节乘进符号轴再重新校准会让 `--symbol-len 1048576 --trials 1`
+/// （实测 2.9 s，完全合理）也被判死 —— 那正是「顺手拦掉合法值」。
+pub const LT_MAX_WORK_BYTES : Int64 = 2_000_000_000L
+
+///|
+/// 单点工作预算守卫（LT6 / LT7 / LT8，见 `LT_MAX_WORK` 与
+/// `LT_MAX_WORK_BYTES`）。
 ///
 /// `received` 用 `received_count_checked`（与 `guard_overhead` 同一公式）。
 /// 每个 trial 即使一个编码符号都不收，也要生成 K 个源符号并构造编解码
@@ -197,7 +227,16 @@ pub const LT_MAX_WORK : Int64 = 2_000_000L
 /// 非有限 overhead 由同循环里**先跑**的 `guard_overhead` 拦下。
 /// 乘积用 Int64：两个因子各自可达 Int32 上限，Int32 乘法会回绕
 /// （2147483647 × 2147483647 ≈ 4.6e18 > Int32 上限）。
-pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String {
+///
+/// **两条轴分开判**（LT8）：符号轴先判（它决定 O(K) 的分布表与 CSR 成本），
+/// 通过后 `work <= LT_MAX_WORK` 已成立，于是 `work × symbol_len` 最大
+/// `2e6 × 1 MB = 2e12`，Int64 不会回绕。
+pub fn guard_work(
+  trials : Int32,
+  k : Int32,
+  overhead : Double,
+  symbol_len : Int32,
+) -> String {
   if trials <= 0 {
     return ""
   }
@@ -205,7 +244,11 @@ pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String {
   let per_trial = if k > received { k } else { received }
   let work = trials.to_int64() * per_trial.to_int64()
   if work > LT_MAX_WORK {
-    "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
+    return "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
+  }
+  let bytes = work * symbol_len.to_int64()
+  if bytes > LT_MAX_WORK_BYTES {
+    "--overhead \{overhead} at K=\{k} with \{trials} trials and --symbol-len \{symbol_len} needs \{bytes} byte-level symbol operations (\{work} ops x \{symbol_len} bytes), above the byte limit of \{LT_MAX_WORK_BYTES}; lower --trials, lower --symbol-len or measure at a smaller K"
   } else {
     ""
   }
@@ -286,9 +329,9 @@ fn check_metric_magnitudes(
     if !oh_msg.is_empty() {
       return oh_msg
     }
-    // LT6/LT7：单点工作预算，含每轮 O(K) 固定初始化。
+    // LT6/LT7/LT8：单点工作预算，含每轮 O(K) 固定初始化与字节轴。
     // guard_overhead 已拦非有限值，这里只看量级。
-    let work_msg = guard_work(trials, k, oh)
+    let work_msg = guard_work(trials, k, oh, symbol_len)
     if !work_msg.is_empty() {
       return work_msg
     }

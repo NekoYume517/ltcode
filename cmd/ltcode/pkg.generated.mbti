@@ -12,6 +12,8 @@ pub const LT_MAX_TRIALS : Int32 = 10_000_000
 
 pub const LT_MAX_WORK : Int64 = 2_000_000
 
+pub const LT_MAX_WORK_BYTES : Int64 = 2_000_000_000
+
 pub const LT_VERIFY_MAX_COUNT : Int32 = 4096
 
 pub fn accepted_keys(String) -> Array[String]
@@ -30,7 +32,7 @@ pub fn guard_symbol_len(Int32) -> String
 
 pub fn guard_trials(Int32) -> String
 
-pub fn guard_work(Int32, Int32, Double) -> String
+pub fn guard_work(Int32, Int32, Double, Int32) -> String
 
 pub fn join_ints(Array[Int32]) -> String
 
