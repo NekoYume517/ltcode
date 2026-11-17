@@ -237,20 +237,57 @@ pub fn guard_work(
   overhead : Double,
   symbol_len : Int32,
 ) -> String {
+  guard_work_scaled(trials, k, overhead, symbol_len, 1)
+}
+
+///|
+/// 带**分布数**因子的单点预算（LT14，2026-11-17 审计）。
+///
+/// `distcmp` 用同一组 `(K, overhead, trials)` 跑三种度数分布（robust /
+/// ideal / fixed5），而 `guard_work` 的预算只按**一份**算 —— `cmd_distcmp`
+/// 的注释自己写着「敏感度是 simulate 的三倍」，守卫却一个系数都没乘。
+/// 这正是 §19.8-4 那条「不可断言的守卫」：注释知道要乘，代码没乘，唯一
+/// 可观测的只有墙钟。
+///
+/// 实测（release native，K=1000 / overhead 1.2 / trials 500）：
+/// `simulate` 7627 ms vs `distcmp` 14828 ms = **1.94×**（不是 3×：ideal 与
+/// fixed5 两条路径不建鲁棒孤波表、剥皮更早卡死）。因此记账因子取 2，
+/// 保守覆盖实测值；`simulate` / `curve` 走因子 1，边界逐字不变。
+///
+/// 乘了多少就写在报错文案里（`dist_note`）—— 用户得能看出自己是被乘过 2
+/// 才被拒的，否则又是一条只能靠猜的守卫。
+pub fn guard_work_scaled(
+  trials : Int32,
+  k : Int32,
+  overhead : Double,
+  symbol_len : Int32,
+  dist_factor : Int32,
+) -> String {
   if trials <= 0 {
     return ""
   }
   let received = received_count_checked(k, overhead)
   let per_trial = if k > received { k } else { received }
-  let work = trials.to_int64() * per_trial.to_int64()
+  let work = trials.to_int64() * per_trial.to_int64() * dist_factor.to_int64()
   if work > LT_MAX_WORK {
-    return "--overhead \{overhead} at K=\{k} with \{trials} trials needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
+    return "--overhead \{overhead} at K=\{k} with \{trials} trials\{dist_note(dist_factor)} needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
   }
   let bytes = work * symbol_len.to_int64()
   if bytes > LT_MAX_WORK_BYTES {
-    "--overhead \{overhead} at K=\{k} with \{trials} trials and --symbol-len \{symbol_len} needs \{bytes} byte-level symbol operations (\{work} ops x \{symbol_len} bytes), above the byte limit of \{LT_MAX_WORK_BYTES}; lower --trials, lower --symbol-len or measure at a smaller K"
+    "--overhead \{overhead} at K=\{k} with \{trials} trials\{dist_note(dist_factor)} and --symbol-len \{symbol_len} needs \{bytes} byte-level symbol operations (\{work} ops x \{symbol_len} bytes), above the byte limit of \{LT_MAX_WORK_BYTES}; lower --trials, lower --symbol-len or measure at a smaller K"
   } else {
     ""
+  }
+}
+
+///|
+/// `dist_factor > 1` 时插进守卫文案的那半句（LT14）。抽成函数是为了让
+/// 「这条预算是按 2x 算的」有唯一出处。
+fn dist_note(dist_factor : Int32) -> String {
+  if dist_factor <= 1 {
+    ""
+  } else {
+    " (charged \{dist_factor}x: distcmp runs three degree distributions against one budget)"
   }
 }
 
@@ -377,6 +414,21 @@ fn check_metric_magnitudes(
   trials : Int32,
   symbol_len : Int32,
 ) -> String {
+  check_metric_magnitudes_scaled(k, overheads, trials, symbol_len, 1)
+}
+
+///|
+/// 带分布数因子的版本（LT14）：`distcmp` 传 2，其余命令走上面的 1。
+///
+/// 因子一起进**单点**预算与**总量**预算 —— 否则「每点乘了 2、总量没乘」
+/// 又是一处镜像缺口（LT7 在 received 轴上就是这样漏的）。
+fn check_metric_magnitudes_scaled(
+  k : Int32,
+  overheads : Array[Double],
+  trials : Int32,
+  symbol_len : Int32,
+  dist_factor : Int32,
+) -> String {
   let k_msg = metric_symbols_bound_msg(k)
   if !k_msg.is_empty() {
     return k_msg
@@ -402,9 +454,9 @@ fn check_metric_magnitudes(
     if !oh_msg.is_empty() {
       return oh_msg
     }
-    // LT6/LT7/LT8：单点工作预算，含每轮 O(K) 固定初始化与字节轴。
-    // guard_overhead 已拦非有限值，这里只看量级。
-    let work_msg = guard_work(trials, k, oh, symbol_len)
+    // LT6/LT7/LT8/LT14：单点工作预算，含每轮 O(K) 固定初始化、字节轴与
+    // 分布数因子。guard_overhead 已拦非有限值，这里只看量级。
+    let work_msg = guard_work_scaled(trials, k, oh, symbol_len, dist_factor)
     if !work_msg.is_empty() {
       return work_msg
     }
@@ -413,7 +465,9 @@ fn check_metric_magnitudes(
     // 不会回绕。
     let received = received_count_checked(k, oh)
     let per_trial = if k > received { k } else { received }
-    let point_work = trials.to_int64() * per_trial.to_int64()
+    let point_work = trials.to_int64() *
+      per_trial.to_int64() *
+      dist_factor.to_int64()
     total_work = total_work + point_work
     total_bytes = total_bytes + point_work * symbol_len.to_int64()
   }
@@ -1233,10 +1287,22 @@ fn cmd_distcmp(args : Args) -> Unit {
     exit_usage()
     return
   }
-  // LT-B：`distcmp` 把同一个 (K, overhead, trials) 跑**三种**分布，
-  // 因此它对这几个参数的敏感度是 simulate 的三倍 —— 同一个守卫值在这里
-  // 尤其不能漏。LT2：`--symbols` 的域上界也在同一条路径上。
-  let too_big = check_metric_magnitudes(k, [overhead], trials, symbol_len)
+  // LT-B：`distcmp` 把同一个 (K, overhead, trials) 跑**三种**分布，因此它
+  // 对这几个参数的敏感度是 simulate 的数倍 —— 同一个守卫值在这里尤其不能
+  // 漏。LT2：`--symbols` 的域上界也在同一条路径上。
+  //
+  // LT14（2026-11-17）：上面那句「三倍」修复前只是注释，守卫一个系数都没
+  // 乘。实测 release native 同参数（K=1000/oh=1.2/trials=500）是 simulate
+  // 的 **1.94×**（7627 vs 14828 ms；ideal/fixed5 不建鲁棒孤波表、剥皮更早
+  // 卡死，所以不到 3×）。预算按 **2×** 记账，保守覆盖实测值；报错文案会
+  // 写明「charged 2x」。
+  let too_big = check_metric_magnitudes_scaled(
+    k,
+    [overhead],
+    trials,
+    symbol_len,
+    2,
+  )
   if !too_big.is_empty() {
     arg_error(too_big)
     exit_usage()
