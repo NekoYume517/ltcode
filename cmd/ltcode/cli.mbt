@@ -255,6 +255,71 @@ pub fn guard_work(
 }
 
 ///|
+/// `--overheads` 的**点数**上限（LT10，2026-11-17 审计）。
+///
+/// 逐点预算管不住点数：`check_metric_magnitudes` 对每个点单独判
+/// `guard_overhead` + `guard_work`，而一条 `curve` 的成本是 Σ_points。
+/// 实测（release native，K=1000、每点 2.4e5 远低于单点上限 2e6）：
+/// 1 / 5 / 20 点 = 2881 / 15768 / 69215 ms，全部 exit 0 —— 点数轴上是
+/// 完整的「每个因子都合法、乘积没守卫」，与 LT6（trials × received）、
+/// LT8（× symbol_len）同族；HANDOVER §19.6 遗留写着「点数无上界」。
+///
+/// 取 64：20 点实测 69 s 已是分钟级，64 点约 3.5 min 是忍耐上限；README
+/// 的曲线 9 点、DEMO 的两条曲线 9/3 点、README「度量」4 点都在 1/7 以内。
+pub const LT_MAX_OVERHEAD_POINTS : Int32 = 64
+
+///|
+/// 单条度量命令的**总量**预算（符号操作轴，LT10）。
+///
+/// 为什么不直接复用 `LT_MAX_WORK`（2e6）：DEMO 的 9 点 × 500 trials 曲线
+/// 合计 **5.84e6**，是单点上限的 2.9 倍 —— 用 2e6 当总量会删掉一条文档
+/// 承诺可复现的命令（正是 LT6 那条「阈值靠文档锚点校准」的教训）。
+/// 取 1e7：文档里最大的曲线 5.84e6 留 1.7× 余量，而 64 点 × 每点 2e6
+/// 的上界 1.28e8 被压到 1e7，最大合法命令落在分钟级而不是小时级。
+pub const LT_MAX_WORK_TOTAL : Int64 = 10_000_000L
+
+///|
+/// 单条度量命令的**总量**预算（字节轴，LT10）。
+///
+/// 与 `LT_MAX_WORK_BYTES` 的关系同上面两条轴：单点 2e9 字节，但 20 个
+/// 这样的点就是 2e10（实测单点约 40 s 量级）。取 2e10 ≈ 一轮 40 s。
+/// 文档里最大的曲线（DEMO 9 点 × 500、symbol_len=4）只有 2.3e7。
+pub const LT_MAX_WORK_BYTES_TOTAL : Int64 = 20_000_000_000L
+
+///|
+/// 点数守卫（LT10）。空串 = 放行，与其余 guard 同形状。
+pub fn guard_overhead_points(points : Int32) -> String {
+  if points > LT_MAX_OVERHEAD_POINTS {
+    "--overheads lists \{points} points, above the limit of \{LT_MAX_OVERHEAD_POINTS}; split the run into several curves"
+  } else {
+    ""
+  }
+}
+
+///|
+/// 一条度量命令的**总**预算守卫（LT10）。`total_work` / `total_bytes` 是
+/// `check_metric_magnitudes` 逐点累加出来的（单位与 `guard_work` 的两条轴
+/// 相同）。空串 = 放行。
+///
+/// 两条轴分开报：用户要改的东西不同（总量超了应减点数或减 trials；字节
+/// 总量超了应减 `--symbol-len` 或 K）。
+pub fn guard_work_total(
+  points : Int32,
+  trials : Int32,
+  total_work : Int64,
+  total_bytes : Int64,
+) -> String {
+  if total_work > LT_MAX_WORK_TOTAL {
+    return "--overheads lists \{points} points at \{trials} trials: \{total_work} source-setup/symbol operations in this one command, above the total budget of \{LT_MAX_WORK_TOTAL}; measure fewer points or lower --trials"
+  }
+  if total_bytes > LT_MAX_WORK_BYTES_TOTAL {
+    "--overheads lists \{points} points at \{trials} trials with this --symbol-len: \{total_bytes} byte-level symbol operations in this one command, above the total byte budget of \{LT_MAX_WORK_BYTES_TOTAL}; measure fewer points, lower --trials or lower --symbol-len"
+  } else {
+    ""
+  }
+}
+
+///|
 /// 单符号长度守卫。
 pub fn guard_symbol_len(symbol_len : Int32) -> String {
   if symbol_len > LT_MAX_SYMBOL_LEN {
@@ -324,6 +389,14 @@ fn check_metric_magnitudes(
   if !len_msg.is_empty() {
     return len_msg
   }
+  // LT10：点数是**命令级**的量级，必须在逐点检查之前先看一眼 —— 逐点都
+  // 通过并不代表一条命令便宜（`--overheads 1.2,1.2,...` 每点都合法）。
+  let points_msg = guard_overhead_points(overheads.length())
+  if !points_msg.is_empty() {
+    return points_msg
+  }
+  let mut total_work = 0L
+  let mut total_bytes = 0L
   for oh in overheads {
     let oh_msg = guard_overhead(k, oh)
     if !oh_msg.is_empty() {
@@ -335,8 +408,16 @@ fn check_metric_magnitudes(
     if !work_msg.is_empty() {
       return work_msg
     }
+    // LT10：累计整条命令的总量。走到这里时每点已是 <= 2e6 符号操作、
+    // <= 2e9 字节，且点数 <= 64，因此两项最大 1.28e8 / 1.28e11，Int64
+    // 不会回绕。
+    let received = received_count_checked(k, oh)
+    let per_trial = if k > received { k } else { received }
+    let point_work = trials.to_int64() * per_trial.to_int64()
+    total_work = total_work + point_work
+    total_bytes = total_bytes + point_work * symbol_len.to_int64()
   }
-  ""
+  guard_work_total(overheads.length(), trials, total_work, total_bytes)
 }
 
 ///|
