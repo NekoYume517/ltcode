@@ -48,6 +48,8 @@ pub fn guard_trials(Int32) -> String
 
 pub fn guard_work(Int32, Int32, Double, Int32) -> String
 
+pub fn guard_work_scaled(Int32, Int32, Double, Int32, Int32) -> String
+
 pub fn guard_work_total(Int32, Int32, Int64, Int64) -> String
 
 pub fn join_ints(Array[Int32]) -> String
