@@ -466,12 +466,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 214 tests, all pass
+moon test             # 216 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（214 条，按 `^test "` 计数）：
+测试分布（216 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -511,6 +511,7 @@ moon build --target wasm
 | `quantize_tie_test.mbt` | 2 | `quantize_param` 的进位规则作用在 binary64 乘积上（0.015→2、1.005→100）、0.005 下界可表示（2026-11-17 审计） |
 | `fixed_distribution_test.mbt` | 2 | `fixed_distribution(d0>k)` 钳到 `[1,k]` 后分布归一化、distcmp 小 K 结论不变（2026-11-17 审计） |
 | `stats_contract_test.mbt` | 2 | `xor_bytes` 的 Int32 溢出（记录性）、与 `symbol_len` 严格正比（2026-11-17 审计） |
+| `payload_len_zero_test.mbt` | 2 | `payload_len=0` 的伪造容器必须报错（LT21）、零符号容器与非零载荷不受影响（2026-11-17 审计） |
 | `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，

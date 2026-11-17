@@ -359,7 +359,7 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError
 |---|---|---|
 | `K` | `1 ..= 1<<20`（`max_source_symbols()`） | `InvalidHeaderField("K", …)` |
 | `symbol_len` | `1 ..= Int32.MAX`（**只看字段自身**） | `InvalidHeaderField("symbol_len", …)` |
-| `payload_len` | `0 ..= min(K × symbol_len, 2^31−1)` | `InvalidHeaderField("payload_len", …)` |
+| `payload_len` | `1 ..= min(K × symbol_len, 2^31−1)`（LT21：编码器产不出零长载荷，`0` 只能来自手工字节） | `InvalidHeaderField("payload_len", …)` |
 | `count` | `0 ..= Int32 上限`，且 `<= 剩余字节 / (4 + symbol_len)` | 超 `Int32` → `InvalidHeaderField`；**仅**超出剩余容量 → `TruncatedSymbol` |
 | `c_q` | `1 ..= 255`（即 `c > 0`，量化后的像） | `InvalidHeaderField("c_q", …)` |
 | `delta_q` | `1 ..= 100`（即 `0 < δ <= 1`） | `InvalidHeaderField("delta_q", …)` |
@@ -395,6 +395,11 @@ ltcode: not a ltcode container: invalid container header: delta_q=101 exceeds th
   `Int32` 必变负），而仅超出剩余容量时更可能是**文件被截断** —— 后者对
   调用方的动作指引是「重传」，因此复用 `TruncatedSymbol` 而不是把两者
   混成一个。
+- `payload_len` 的**下界是 1**（LT21，2026-11-17 审计）：域从 `0 ..=` 收到 `1 ..=`。
+  零长载荷的容器编码器产不出（空输入被 `EmptySource` 拒），旧域让一份手工头
+  （`payload_len=0` + `payload_hash = FNV("")`）被判 `Complete` 并写出 0 字节文件 ——
+  与本轮 LT20（`pack_container` 不校验 payload vs block）是同一件事的编码/解码两侧镜像。
+  零符号容器（`--count 0`）不受影响：它的 `payload_len` 是非零原长、`count` 才是 0。
 - `payload_len` 的上界要**同时**钳到 `2^31−1`：`reassemble` 与
   `Container.payload_len` 都是有符号 `Int32`，不钳位就等于允许静默截断
   （`u64(2^32+5).to_int() == 5`）。

@@ -47,9 +47,14 @@ fn container_with_k(k_field : UInt64) -> Bytes {
     arr[11 + i] = b'\x00' // seed = 0
   }
   poke_u32_k(arr, 19, 1UL) // symbol_len = 1
-  for i = 0; i < 8; i = i + 1 {
-    arr[23 + i] = b'\x00' // payload_len = 0
+  // payload_len = 1（LT21，2026-11-17）：这个夹具原本写 0，靠的是旧域
+  // `0 ..= K × symbol_len`。LT21 把下界收到 1（编码器产不出零长载荷），
+  // 于是夹具改成 1 —— 本用例断言的是**K 的域**（K=1 与 K=max 放行），
+  // payload_len 取任何 <= K × symbol_len 的合法值都同样成立。
+  for i = 0; i < 7; i = i + 1 {
+    arr[23 + i] = b'\x00'
   }
+  arr[30] = b'\x01' // payload_len = 1
   for i = 0; i < 8; i = i + 1 {
     arr[31 + i] = b'\x00' // payload_hash = 0
   }

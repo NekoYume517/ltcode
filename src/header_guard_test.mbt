@@ -219,13 +219,21 @@ test "LT-A: the new header checks do not reject legitimate containers" {
   }
   inspect(zc.symbols.length(), content="0")
   inspect(zc.payload_len, content="8")
-  // payload_len 的合法下界 0
+  // payload_len 的合法**下界是 1**（LT21，2026-11-17）：0 必须被拒。
+  // 修复前这里是「payload_len 的合法下界 0 / inspect(pc.payload_len, content="0")」，
+  // 锁的是「格式允许这个字段取 0」这一表述（注释自己就写着 encode 侧产不出），
+  // 而不是任何调用方依赖的契约；LT21 把 decode 侧对齐到 encode 侧后反转。
+  // 完整回归见 payload_len_zero_test.mbt 的 `LT21:` 两条。
   let arr = packed.to_array()
   poke_u64(arr, 23, 0UL)
-  let pc = unpack_container(Bytes::from_array(arr)) catch {
-    _ => abort("payload_len = 0 rejected")
+  let outcome = try {
+    let _ = unpack_container(Bytes::from_array(arr))
+    "accepted"
+  } catch {
+    InvalidHeaderField(name, value, low, _) => "\{name}=\{value} min=\{low}"
+    _ => "other"
   }
-  inspect(pc.payload_len, content="0")
+  inspect(outcome, content="payload_len=0 min=1")
 }
 
 ///|

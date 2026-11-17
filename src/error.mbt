@@ -91,7 +91,16 @@ pub fn error_text(e : LtError) -> String {
       "unsupported container version \{found}, this build supports \{supported}"
     InvalidHeaderField(name, value, low, high) =>
       if value < low {
-        "invalid container header: \{name}=\{value} is below the minimum \{low}"
+        let base = "invalid container header: \{name}=\{value} is below the minimum \{low}"
+        // LT21（2026-11-17 审计）：`payload_len` 的下界 1 不是随手取的 ——
+        // 编码器根本产不出零长载荷（空输入被 `EmptySource` 拒），所以这份
+        // 头只能来自手工构造。只丢一个「低于下界 1」会让用户去怀疑自己的
+        // 输入文件，得把「产不出」这件事说出来。
+        if name == "payload_len" && value == 0UL {
+          "\{base}; the encoder cannot produce a container with a zero-length payload (empty input is rejected by EmptySource), so this header can only come from hand-crafted bytes"
+        } else {
+          base
+        }
       } else {
         "invalid container header: \{name}=\{value} exceeds the maximum \{high}"
       }

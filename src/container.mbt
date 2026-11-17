@@ -525,14 +525,27 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   // payload_len：u64。合法上界受两个约束——`K × symbol_len`（`from_bytes`
   // 切块后的最大长度），以及 `Int32` 正数上限（`reassemble` 与
   // `Container.payload_len` 都用有符号 Int32，超出必须报错而不是截断）。
+  //
+  // **下界是 1，不是 0（LT21，2026-11-17 审计，Lead 裁决方向 1）**。
+  // 修复前域是 `0 ..=`，于是一份手工构造的头部（`payload_len=0` + 与之自洽的
+  // `payload_hash = FNV("")`）会让 `decode_verified` 报 `Complete` 并写出一个
+  // **0 字节**的文件 —— `decoded OK: ... payload=0 bytes (checksum verified)`。
+  // 而编码器**永远产不出**这种容器：空输入在 `SourceBlock::from_bytes` 就被
+  // `EmptySource` 拒掉，`payload.length() >= 1` 恒成立。于是「encode 产不出」与
+  // 「decode 当成功」两条路径口径不一致 —— 与本轮 LT20（`pack_container` 不校验
+  // payload vs block，写出读不回的容器）是同一件事的编码/解码两侧镜像。
+  //
+  // 收窄是**往正确方向走**：伪造的容器从「成功解出 0 字节」变成「头部非法」。
+  // 零符号容器（`--count 0`）不受影响：它的 `payload_len` 是**非零**原长、
+  // `count` 才是 0，`payload_len_zero_test.mbt` 有专门的回归。
   let mut payload_len_max = k_raw * symbol_len_raw
   let int32_max = 2147483647UL
   if payload_len_max > int32_max {
     payload_len_max = int32_max
   }
-  if payload_len > payload_len_max {
+  if payload_len < 1UL || payload_len > payload_len_max {
     raise LtError::InvalidHeaderField(
-      "payload_len", payload_len, 0UL, payload_len_max,
+      "payload_len", payload_len, 1UL, payload_len_max,
     )
   }
   let payload_hash = r.u64()
