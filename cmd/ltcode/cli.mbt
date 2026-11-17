@@ -1020,6 +1020,19 @@ fn cmd_decode(args : Args) -> Unit {
         "decode INCOMPLETE: need more symbols (missing \{missing.length()} of \{container.k} source symbols)",
       )
       println("missing indices: \{join_ints(missing)}")
+      // LT18（2026-11-17 审计）：域内篡改头部参数（`c_q` → 101/255 等）也会
+      // 落到这里 —— 子集全变，剥皮卡住。**结论仍然是 `Incomplete`**：LT 没有
+      // 逐符号校验和，而载荷哈希只能在 `Complete` 之后才算，因此「参数与符号
+      // 不匹配」与「符号不够」在信息上不可区分，把它们混成一个 `Corrupted`
+      // 会让真正的"再发几个符号就行"也变成"丢弃重传"。
+      //
+      // 能做的是**让诊断可操作**：符号数已经 >= K 却仍然剥皮卡住时（正常
+      // overhead>=1 很少全卡），多给一行，把两种可能和各自的下一步都说出来。
+      if container.symbols.length() >= container.k {
+        println(
+          "  note: this container already carries \{container.symbols.length()} symbols for K=\{container.k} yet peeling stalled; either more symbols are needed, or its header parameters (c_q/delta_q/K) do not match the symbols that were encoded",
+        )
+      }
       exit_incomplete()
     }
   }

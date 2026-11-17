@@ -185,6 +185,9 @@ decode INCOMPLETE: need more symbols (missing 51 of 100 source symbols)
 missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,31,33,34,36,38,42,47,
 50,51,52,53,54,62,65,67,69,70,71,72,73,74,75,76,77,79,81,83,86,89,90,92,93,
 94,96,98,99
+  note: this container already carries 100 symbols for K=100 yet peeling stalled;
+  either more symbols are needed, or its header parameters (c_q/delta_q/K) do not
+  match the symbols that were encoded
 $ echo $?
 1
 ```
