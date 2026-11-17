@@ -18,16 +18,16 @@
 > 2026-11-17 又逐条重跑了一次（含 §2 的 SHA-256、§3 的 51 个缺失下标、
 > §3b 的两个校验和数值、§5 的 9 点曲线、§6 的三条 `distcmp`），全部逐字
 > 相同；唯一变过的是 §1 的 `moon check` 警告数与 `moon test` 计数（随之
-> 新增的测试涨到 **217**，该块已按本轮实测改写 —— 见审计报告 LT25）。
+> 新增的测试涨到 **222**，该块已按本轮实测改写 —— 见审计报告 LT25）。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (721 warnings, 0 errors)
+# Finished. moon: ran 3 tasks, now up to date (759 warnings, 0 errors)
 
 $ moon test
-Total tests: 217, passed: 217, failed: 0.
+Total tests: 222, passed: 222, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
