@@ -202,13 +202,32 @@ pub fn distribute_from_array(k : Int32, values : Array[Double]) -> Distribution 
 }
 
 ///|
-/// 固定度分布：度数恒为 `d0`（`1 <= d0 <= k`）。
+/// 固定度分布：度数恒为 `d0`。
 ///
 /// 用途是对照实验：固定度分布**没有**「度为 1 的符号」的富集，
 /// 剥皮几乎立刻卡死 —— 这正是鲁棒孤波 τ 那一段存在的理由。
+///
+/// **`d0` 会被钳到 `[1, k]`**（LT15，2026-11-17 审计）。修复前 `d0 > k`
+/// 或 `d0 < 1` 会静默产出**全零 pmf**（未归一化），而
+/// `Distribution::sample` 在 `cdf` 全零时把二分推到 `k+1` 再钳到 `k` ——
+/// 「固定度 5」在 K=2/3/4 时实际是「固定度 K」，名字与含义不符，且
+/// `validate_distribution` 会拒这张表。CLI 可达（`distcmp` 恒用
+/// `fixed(5)`）：实测 K=1 → 1.000、K=2/3/4 → 0.000。
+///
+/// 钳位之后分布恒为**单位质量**（`validate_distribution` 通过），而
+/// `distcmp` 的对外结论逐字未变（K=2..4 仍是 0.000：度 k 的方程彼此相同，
+/// 没有度 1 符号可用）—— 变的是它不再依赖「零表被钳位」这个副产品。
+/// 域内 `d0` 逐位不变。
 pub fn fixed_distribution(d0 : Int32, k : Int32) -> Distribution {
   let values : Array[Double] = Array::make(k, 0.0)
-  let idx = d0 - 1
+  let mut clamped = d0
+  if clamped < 1 {
+    clamped = 1
+  }
+  if clamped > k {
+    clamped = k
+  }
+  let idx = clamped - 1
   if idx >= 0 && idx < k {
     values[idx] = 1.0
   }
