@@ -413,6 +413,12 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   // **头部取值**而 raise `DistributionNotNormalized`，那个变体恢复成它本来的
   // 含义（调用方自己构造的分布表没归一化）。
   let c_q = r.byte()
+  // **下界是实质检查，上界不是**（LT17，2026-11-17 审计）：`Reader::byte`
+  // 已经 `& 0xFF`，所以 `c_q > 255` **结构性不可构造** —— 这里没有、也
+  // 不可能有「上界守卫」。文案里仍然写 255，因为 `InvalidHeaderField` 的
+  // 四元组要求一个上界，而 255 是这张网格的真实上界（`quantize_param` 的
+  // 钳位点）；但它不是一条会在这里触发的判断，别把它读成「已校验」。
+  // `delta_q` 那边不同：它的上界 100 是**真的**会触发的（byte 可以到 255）。
   if c_q < 1 {
     raise LtError::InvalidHeaderField("c_q", c_q.to_uint64(), 1UL, 255UL)
   }
