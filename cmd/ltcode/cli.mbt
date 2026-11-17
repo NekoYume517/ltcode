@@ -513,6 +513,68 @@ pub fn default_count_overflow_msg(k : Int32) -> String {
 }
 
 ///|
+/// `encode` 产出的容器**字节**上限（LT9，2026-11-17 审计）。
+///
+/// `LT_MAX_COUNT` 只限了符号**个数**，而容器大小是
+/// `count × (4 + symbol_len)`，其中 `symbol_len = ceil(payload / K)` 与输入
+/// 文件大小成正比。于是 `--symbols 1` 时 4 KB 的 payload 就给出
+/// `symbol_len = 4000`，`--count 1000000` 要求 4.1 GB 容器 —— 实测
+/// release native 60 s 未结束、RSS 5772 MB、零输出（§17.3-3 的
+/// 「合法输入 + 大参数」挂死族；HANDOVER §19.6 记录了「依据与实测不符」
+/// 但一直没修）。
+///
+/// 取值依据：容器 4.1 GB 时 RSS 5.8 GB（放大 ≈ 1.4×），1 GiB 容器对应
+/// ≈ 1.4 GB RSS，安全；而**域内最大合法用途**（K ≈ 1e6、4 字节符号）
+/// 只有 4 MB，离上限三个数量级，README/DEMO 的每条 encode 命令都在
+/// 1.3 KB ~ 13 KB 量级。
+pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824L
+
+///|
+/// 一个容器的字节数：`count × (4 + symbol_len)`（LT9）。
+///
+/// 每个符号占 4 字节 index + `symbol_len` 字节符号体，与 `unpack_container`
+/// 里 `body_len = 4 + symbol_len` 的除法口径**逐字一致** —— 判断「写得出、
+/// 读不回」必须两边用同一个式子。Int64：`count ≤ 1e6`、`symbol_len` 可达
+/// Int32 上限，Int32 乘法会回绕。
+pub fn container_size_bytes(count : Int32, symbol_len : Int32) -> Int64 {
+  count.to_int64() * (4L + symbol_len.to_int64())
+}
+
+///|
+/// 容器字节上限的守卫（LT9）。空串 = 放行（与其余 guard 同形状）。
+///
+/// 判据是**乘积**，不是 `--count` 本身：同一个 count 在 4 字节符号下只有
+/// 4 MB，在 4000 字节符号下是 4.1 GB。文案点名 `--count`、`symbol_len` 与
+/// 真实公式，让用户知道该改哪一头（加大 `--symbols` 会让符号变短）。
+pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String {
+  let size = container_size_bytes(count, symbol_len)
+  if size > LT_MAX_CONTAINER_BYTES {
+    "--count \{count} with symbol_len=\{symbol_len} writes \{size} bytes (count x (4 + symbol_len)), above the container limit of \{LT_MAX_CONTAINER_BYTES}; lower --count or raise --symbols so that each symbol is shorter"
+  } else {
+    ""
+  }
+}
+
+///|
+/// `SourceBlock::from_bytes` 的切块长度 `ceil(len / k)`（至少 1），用于在
+/// **构造源块之前**就能算出容器大小（LT9）。两处必须用同一个式子，否则
+/// 守卫看到的 `symbol_len` 与真正写进头部的那个不是一个数。
+fn symbol_len_ceil(len : Int32, k : Int32) -> Int32 {
+  if k < 1 {
+    return 1
+  }
+  let mut symbol_len = len / k
+  if len % k != 0 {
+    symbol_len = symbol_len + 1
+  }
+  if symbol_len < 1 {
+    1
+  } else {
+    symbol_len
+  }
+}
+
+///|
 /// `--symbols` 的上界守卫（LT-K，2026-11-11 审计）。
 ///
 /// 修复前 `--symbols` 只判了下界（`>= 1`），上界留给
@@ -627,6 +689,18 @@ fn cmd_encode(args : Args) -> Unit {
       return
     }
     Some(d) => d
+  }
+  // LT9：容器字节数 `count × (4 + symbol_len)`。判据必须在
+  // `SourceBlock::from_bytes` 与 `enc.symbols` **之前** —— 那两个才是分配点，
+  // 拒绝的价值就在于一次都不分配（实测无守卫时 60 s、RSS 5.8 GB、零输出）。
+  let bytes_msg = container_bytes_bound_msg(
+    count,
+    symbol_len_ceil(data.length(), k),
+  )
+  if !bytes_msg.is_empty() {
+    arg_error(bytes_msg)
+    exit_usage()
+    return
   }
   let block = match @lib.SourceBlock::from_bytes(data, k) {
     Err(e) => {
