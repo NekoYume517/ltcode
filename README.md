@@ -466,12 +466,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 188 tests, all pass
+moon test             # 214 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（188 条，按 `^test "` 计数）：
+测试分布（214 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -503,6 +503,15 @@ moon build --target wasm
 | `count_guard_test.mbt` | 1 | `--count` 上限常量与语义（LC-1） |
 | `usage_coverage_wbtest.mbt` | 2 | `help` 与 `accepted_keys` 必须互相投影（2026-11-12 审计） |
 | `solvability_note_wbtest.mbt` | 6 | `encode` 末尾可解性验算：解不出必说、解得出逐字不变、闸门 `count <= 4096`、`--count 0` 优先（2026-11-12 followup） |
+| `metric_work_bytes_wbtest.mbt` | 4 | 工作预算的**字节轴**：`--symbol-len` 组合被拦、默认 sl 不误伤、上界±1、全部文档命令逐条代进（2026-11-17 审计） |
+| `container_bytes_bound_test.mbt` | 4 | `encode` 的容器字节上限 1 GiB、边界精确、零符号容器与文档 encode 命令不误伤（2026-11-17 审计） |
+| `metric_points_guard_wbtest.mbt` | 3 | `curve --overheads` 点数 ≤ 64 与整条命令的总预算（符号轴 + 字节轴）（2026-11-17 审计） |
+| `metric_distcmp_factor_wbtest.mbt` | 2 | `distcmp` 的预算按实测 1.94× 保守乘 2，simulate/curve 边界不变（2026-11-17 审计） |
+| `param_image_test.mbt` | 4 | 参数越界报 `ParamOutOfImage`（不再借分布文案）、`try_new` 与 `new` 的钳位/拒绝矩阵、逐符号一致性（2026-11-17 审计） |
+| `quantize_tie_test.mbt` | 2 | `quantize_param` 的进位规则作用在 binary64 乘积上（0.015→2、1.005→100）、0.005 下界可表示（2026-11-17 审计） |
+| `fixed_distribution_test.mbt` | 2 | `fixed_distribution(d0>k)` 钳到 `[1,k]` 后分布归一化、distcmp 小 K 结论不变（2026-11-17 审计） |
+| `stats_contract_test.mbt` | 2 | `xor_bytes` 的 Int32 溢出（记录性）、与 `symbol_len` 严格正比（2026-11-17 审计） |
+| `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，

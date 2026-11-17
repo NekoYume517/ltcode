@@ -167,6 +167,9 @@ pub(all) struct Encoder {
 
 pub fn Encoder::new(block : SourceBlock, seed : UInt64, c : Double, delta : Double)
   -> Result[Encoder, LtError]
+/// LT12（2026-11-17 审计）：严格入口 —— 越界参数报 ParamOutOfImage，不钳位
+pub fn Encoder::try_new(block : SourceBlock, seed : UInt64, c : Double, delta : Double)
+  -> Result[Encoder, LtError]
 pub fn Encoder::symbol(self : Encoder, index : Int) -> Symbol
 pub fn Encoder::symbols(self : Encoder, first_index : Int, count : Int) -> Array[Symbol]
 
@@ -189,9 +192,21 @@ pub fn default_delta() -> Double          // 0.5
 只能存百分之一量化值，若编码端用原始浮点值、解码端用量化值，非网格参数
 （如 `c=0.014` → 网格 `0.01`）会让两端算出不同的子集 —— 实测 300 个符号
 里 46 个方程失效，容器「encode 成功、decode 必然失败」。归一后两端恒一致；
-网格点参数（任何 `q/100` 的值，含默认 `0.1`/`0.5`）逐位不变；`c < 0.005`
-（归一后为 0）与非有限值在入口报错。数学层（`robust_distribution` /
+网格点参数（任何 `q/100` 的值，含默认 `0.1`/`0.5`）逐位不变；非有限值在入口
+报 `DistributionNotNormalized`。数学层（`robust_distribution` /
 `sample_degree`）不受影响，仍接受任意 `c > 0`。
+
+**越界参数：钳位（`new`）与严格（`try_new`）两条路都成文（LT11/LT12，
+2026-11-17 审计）**：
+
+| 入口 | 越界处理 | 适用 |
+|---|---|---|
+| `Encoder::new` | **钳位**：`c=1000` → `c_q=255` → `2.55`；落不进 `[1,255]`（c）/ `[1,100]`（delta）时 `ParamOutOfImage` | 既有调用方（含 CLI 的默认参数路径）；钳位是 2026-11-15 容器像测试锁定的契约 |
+| `Encoder::try_new` | **严格**：`round(c*100)` 必须落在 `[1,255]`，否则 `ParamOutOfImage`；绝不静默换值 | 需要「要么按我说的参数、要么报错」的调用方 |
+
+严格域是**半开区间**：`c ∈ [0.005, 2.555)`、`delta ∈ [0.005, 1.005)`。
+网格上两者逐位相同，因此 `try_new` 造的容器必然能被钳位路径的 `decode`
+解开（有逐符号一致性测试）。CLI 的 `encode` 走 `try_new`。
 
 抽样用 **Floyd 算法**，只用 O(d) 内存（不是 O(K)）。均匀性由
 `encoder_test.mbt` 对 K=6/d=3 的全部 20 个子集做 200000 次穷举统计锁定。
@@ -301,7 +316,16 @@ pub fn dequantize_param(q : Int) -> Double
 /// `quantize_param` 的像是 [0,255]，而 unpack 的头部域是 `c_q ∈ [1,255]`、
 /// `delta_q ∈ [1,100]` —— 越出像内域的参数（c<0.005、delta<0.005、
 /// delta>1）写出的头会被 unpack 明确拒绝（InvalidHeaderField，不是静默
-/// 坏数据）。可表示域：c ∈ [0.005, 2.555]、delta ∈ [0.005, 1]。
+/// 坏数据）。**这张网格的精确形状（LT11/LT12/LT13，2026-11-17 审计）**：
+/// 判据是 `round(x*100)`，进位规则 half-away-from-zero，作用在 **binary64
+/// 的乘积**上而不是十进制中点上 —— `0.005*100` 恰好是 `0.5`（进到 1）、
+/// `0.015*100` 恰好是 `1.5`（进到 2）、`1.005*100` 是 `100.49999999999999`
+/// （落到 100），`2.555*100` 是 `255.50000000000003`（进到 256）。因此：
+/// `Encoder::try_new` 的严格域是 `c ∈ [0.005, 2.555)`、
+/// `delta ∈ [0.005, 1.005)`（越界 `ParamOutOfImage`）；`Encoder::new`
+/// 把越界值**钳位**到网格（`c=1000` → 2.55）后才判，落不进头部域时报
+/// `ParamOutOfImage`。旧版这里写「可表示域：c ∈ [0.005, 2.555]」是错的：
+/// 上界既不是闭区间、也不是拒绝边界（大于它的有限值被静默钳位）。
 /// 走 Encoder 的正常路径在入口就归一/拒绝（§5），直接调 pack_container
 /// 的调用方由 unpack 把关（2026-11-15 审计锁定，见 quantize_image_test.mbt）。
 
@@ -426,6 +450,10 @@ pub(all) suberror LtError {
   /// 解码“完成”但载荷哈希不符（实际, 期望）。**不能**降级为 Incomplete：
   /// 数据不够可以再要符号；哈希不符说明数据本身坏了，再要也没用。
   CorruptionDetected(UInt64, UInt64)
+  /// LT11（2026-11-17 审计）：参数越出容器头的量化网格（名字, 实际值,
+  /// 下界, 上界）。修复前这类越界借 DistributionNotNormalized 的
+  /// "sum=0" 说话 —— 用户给的是 c，报文却指一张他从没写过的分布表。
+  ParamOutOfImage(String, Double, Double, Double)
   /// 容器头部字段超出可表示域（字段名, 实际值, 合法下界, 合法上界）。
   /// 四元组而非二元组：同一个变体既要报「超上限」（count / symbol_len /
   /// payload_len），也要报「低于下界」（K = 0），只说"超上限"会把后者描述错。
@@ -529,10 +557,28 @@ pub const LT_MAX_RECEIVED    : Int32 = 4_000_000
 pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
 /// LT6/LT7：单点 `trials × max(K, received)` 的工作预算上限
 pub const LT_MAX_WORK        : Int64 = 2_000_000
+/// LT8（2026-11-17）：字节轴。每个符号操作实际处理 symbol_len 字节
+pub const LT_MAX_WORK_BYTES  : Int64 = 2_000_000_000
+/// LT9（2026-11-17）：encode 的容器字节上限（count x (4 + symbol_len)）
+pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
+/// LT10（2026-11-17）：curve 的点数上限与整条命令的总预算
+pub const LT_MAX_OVERHEAD_POINTS : Int32 = 64
+pub const LT_MAX_WORK_TOTAL      : Int64 = 10_000_000
+pub const LT_MAX_WORK_BYTES_TOTAL : Int64 = 20_000_000_000
 
 pub fn guard_trials(trials : Int32) -> String                       // 空串 = 放行
 pub fn guard_overhead(k : Int32, overhead : Double) -> String
-pub fn guard_work(trials : Int32, k : Int32, overhead : Double) -> String
+pub fn guard_work(trials : Int32, k : Int32, overhead : Double,
+  symbol_len : Int32) -> String
+/// LT14（2026-11-17）：distcmp 按实测 1.94x 保守记账 2x
+pub fn guard_work_scaled(trials : Int32, k : Int32, overhead : Double,
+  symbol_len : Int32, dist_factor : Int32) -> String
+pub fn guard_overhead_points(points : Int32) -> String
+pub fn guard_work_total(points : Int32, trials : Int32,
+  total_work : Int64, total_bytes : Int64) -> String
+/// LT9（2026-11-17）：容器字节数与其上限文案
+pub fn container_size_bytes(count : Int32, symbol_len : Int32) -> Int64
+pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String
 pub fn guard_symbol_len(symbol_len : Int32) -> String
 /// LT2：`--symbols` 的域上界（与 encode 同一个上限，文案不同）
 pub fn metric_symbols_bound_msg(k : Int32) -> String
