@@ -64,7 +64,7 @@ test "LT4: encode/decode round trip with K=1 and delta=1.0" {
 }
 
 ///|
-/// 容器级：`pack_container(c, delta=1.0)` 产出的头部（delta_q=100）必须
+/// 容器级：`pack_ok(c, delta=1.0)` 产出的头部（delta_q=100）必须
 /// 能被 `unpack_container` + `decode_verified` 读回 —— pack 与 unpack
 /// 对同一个合法域值给出一致答案。
 test "LT4: packed container with delta=1.0 (delta_q=100) decodes verified" {
@@ -78,7 +78,7 @@ test "LT4: packed container with delta=1.0 (delta_q=100) decodes verified" {
     Err(e) => abort("Encoder::new: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 3)
-  let packed = pack_container(block, 777UL, data, 0.1, 1.0, symbols)
+  let packed = pack_ok(block, 777UL, data, 0.1, 1.0, symbols)
   // 头部第 6 字节确实是 delta_q=100
   assert_true(packed[6].to_int() == 100)
   let c = unpack_container(packed) catch {

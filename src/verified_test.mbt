@@ -43,7 +43,7 @@ test "verified: intact container decodes and passes the checksum" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 80)
-  let packed = pack_container(block, seed, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, seed, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
   let r = decode_verified(c) catch {
     e => abort("unexpected: \{error_text(e)}")
@@ -75,7 +75,7 @@ test "verified: tampered degree-1 symbol raises CorruptionDetected" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 80)
-  let packed = pack_container(block, seed, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, seed, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
   // 找度 1 的符号
   let mut target = -1

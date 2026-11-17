@@ -55,7 +55,7 @@ fn healthy_container(k : Int32, count : Int32) -> (SourceBlock, Bytes) {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, count)
-  (block, pack_container(block, 0x1234UL, payload, 0.1, 0.5, symbols))
+  (block, pack_ok(block, 0x1234UL, payload, 0.1, 0.5, symbols))
 }
 
 ///|
@@ -205,7 +205,7 @@ test "LT-A: the new header checks do not reject legitimate containers" {
     Symbol::{ index: 1, data: b"\x03\x04", },
     Symbol::{ index: 2, data: b"\x05\x06", },
   ]
-  let packed = pack_container(block, 5UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 5UL, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch {
     _ => abort("full container rejected")
   }
@@ -213,7 +213,7 @@ test "LT-A: the new header checks do not reject legitimate containers" {
   inspect(c.payload_len, content="8")
   inspect(c.k, content="4")
   // 零符号容器
-  let zero = pack_container(block, 5UL, payload, 0.1, 0.5, [])
+  let zero = pack_ok(block, 5UL, payload, 0.1, 0.5, [])
   let zc = unpack_container(zero) catch {
     _ => abort("zero container rejected")
   }

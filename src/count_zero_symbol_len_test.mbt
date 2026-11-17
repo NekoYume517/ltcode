@@ -85,9 +85,7 @@ test "container: zero-symbol container with symbol_len > header_len unpacks" {
   let block = cz_block(k, 400)
   let payload = cz_payload(block)
   let symbols : Array[Symbol] = []
-  let packed = pack_container(
-    block, 83924790232133UL, payload, 0.1, 0.5, symbols,
-  )
+  let packed = pack_ok(block, 83924790232133UL, payload, 0.1, 0.5, symbols)
   inspect(packed.length(), content="43")
   let c = unpack_container(packed) catch {
     e => abort("unpack must accept a symbol-free container: \{error_text(e)}")
@@ -122,7 +120,7 @@ test "container: the count=0 boundary is symbol_len 43 vs 44, both accepted" {
     // （最后一段的补零不进屋 `payload_len`）。
     let payload = cz_payload(block).clamped_view(end=payload_len).to_owned()
     assert_eq(payload.length(), payload_len)
-    let packed = pack_container(block, 7UL, payload, 0.1, 0.5, [])
+    let packed = pack_ok(block, 7UL, payload, 0.1, 0.5, [])
     let c = unpack_container(packed) catch {
       e => abort("K=\{k} symbol_len=\{symbol_len} rejected: \{error_text(e)}")
     }
@@ -141,7 +139,7 @@ test "container: the count=0 boundary is symbol_len 43 vs 44, both accepted" {
 test "container: symbol_len 0 and 2^31 are still rejected on a count=0 header" {
   let block = cz_block(4, 3)
   let payload = cz_payload(block)
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, [])
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, [])
   let bads : Array[UInt32] = [0U, 2147483648U]
   for bad in bads {
     let forged = cz_patch_u32(packed, 19, bad)
@@ -165,7 +163,7 @@ test "container: symbol_len 0 and 2^31 are still rejected on a count=0 header" {
 test "container: symbol_len above payload_len is a well-formed header (count=0)" {
   let block = cz_block(2, 2) // payload 4 字节
   let payload = cz_payload(block)
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, [])
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, [])
   let forged = cz_patch_u32(packed, 19, 5U) // 5 > payload_len (4)
   let c = unpack_container(forged) catch {
     e => abort("symbol_len=5 with payload_len=4 must unpack: \{error_text(e)}")

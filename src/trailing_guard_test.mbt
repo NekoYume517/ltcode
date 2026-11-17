@@ -44,7 +44,7 @@ fn trailing_base_container() -> Bytes {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 80)
-  pack_container(block, 0xAAUL, payload, 0.1, 0.5, symbols)
+  pack_ok(block, 0xAAUL, payload, 0.1, 0.5, symbols)
 }
 
 ///|
@@ -120,7 +120,7 @@ test "LT-D: a shrunken count is rejected as trailing bytes" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 300)
-  let packed = pack_container(block, 7UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 7UL, payload, 0.1, 0.5, symbols)
   // 先确认原容器完整可用
   let ok = unpack_container(packed) catch { _ => abort("good failed") }
   inspect(ok.symbols.length(), content="300")
@@ -150,7 +150,7 @@ test "LT-D: a container that ends exactly at its last symbol still unpacks" {
   // 零符号容器：43 字节头，读完就是末尾 —— 也必须通过
   let block = sample_block(4, 2)
   let payload = sample_payload(block)
-  let zero = pack_container(block, 1UL, payload, 0.1, 0.5, [])
+  let zero = pack_ok(block, 1UL, payload, 0.1, 0.5, [])
   inspect(zero.length(), content="43")
   let zc = unpack_container(zero) catch {
     _ => abort("zero container rejected")

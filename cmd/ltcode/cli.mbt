@@ -855,6 +855,10 @@ fn cmd_encode(args : Args) -> Unit {
     Ok(e) => e
   }
   let symbols = enc.symbols(0, count)
+  // LT20：`pack_container` 现在做前置校验（payload <= K x symbol_len、
+  // 每个符号体长度 == symbol_len）。CLI 这条路径的两个量同源（`data` 既
+  // 切块又算哈希），所以它在正常输入上恒不触发；真触发说明有 bug，按
+  // 输入错误（exit 3）报出来比静默写出坏容器好。
   let packed = @lib.pack_container(
     block,
     seed,
@@ -862,7 +866,13 @@ fn cmd_encode(args : Args) -> Unit {
     @lib.default_c(),
     @lib.default_delta(),
     symbols,
-  )
+  ) catch {
+    e => {
+      arg_error("cannot pack container: \{@lib.error_text(e)}")
+      exit_bad_input()
+      return
+    }
+  }
   match write_file(out_path, packed) {
     None => {
       arg_error("cannot write '\{out_path}'")

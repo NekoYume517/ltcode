@@ -57,7 +57,7 @@ fn container_with_huge_symbol_len() -> Bytes {
     Symbol::{ index: 0, data: b"\x01\x02", },
     Symbol::{ index: 1, data: b"\x03\x04", },
   ]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   let arr = packed.to_array()
   // 偏移 19..23 是 symbol_len
   arr[19] = b'\x7F'
@@ -101,7 +101,7 @@ test "LT-C: exact-fit symbol bodies still read successfully" {
     Symbol::{ index: 1, data: b"\x04\x05\x06", },
     Symbol::{ index: 2, data: b"\x07\x08\x09", },
   ]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   inspect(packed.length(), content="64")
   let c = unpack_container(packed) catch { _ => abort("exact-fit rejected") }
   inspect(c.symbols.length(), content="3")
@@ -115,7 +115,7 @@ test "LT-C: a body short by one byte reports sane byte counts" {
   let block = sample_block(2, 3)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02\x03", }]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   let cut = packed.clamped_view(end=packed.length() - 1).to_owned()
   try {
     let _ = unpack_container(cut)

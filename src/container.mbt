@@ -315,7 +315,31 @@ pub fn pack_container(
   c : Double,
   delta : Double,
   symbols : Array[Symbol],
-) -> Bytes {
+) -> Bytes raise LtError {
+  // ── 前置校验（LT20，2026-11-17 审计）────
+  //
+  // 修复前这里什么都不查，于是库用户能写出一份**自己的解码器必然拒绝**的
+  // 容器：`payload.length() > K x symbol_len` 会被 `unpack_container` 的
+  // `payload_len` 域校验直接判死；符号体长度与头部 `symbol_len` 不一致会被
+  // `decode_with_stats` 的 `TruncatedSymbol` 判死。两者都是「写得出、读不回」
+  // —— 与 LT-I（`--count 0` 写出的头被自己的解码器拒）同族，只是入口在库。
+  //
+  // CLI 路径本来就自洽（同一份 `data` 既切块又算哈希），所以这条校验对
+  // `cmd_encode` 是恒真的；它挡的是绕过 CLI 直接调库的用法。
+  let limit = block.k.to_int64() * block.symbol_len.to_int64()
+  if payload.length().to_int64() > limit {
+    raise LtError::InvalidHeaderField(
+      "payload_len",
+      payload.length().to_uint64(),
+      0UL,
+      limit.to_uint64(),
+    )
+  }
+  for s in symbols {
+    if s.data.length() != block.symbol_len {
+      raise LtError::SymbolLengthMismatch(block.symbol_len, s.data.length())
+    }
+  }
   let out : Array[Byte] = []
   for m in container_magic {
     out.push(m)

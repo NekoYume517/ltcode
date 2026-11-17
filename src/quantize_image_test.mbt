@@ -56,7 +56,7 @@ test "LT5: non-grid c (0.014) container round trip completes" {
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 300)
-  let packed = pack_container(block, 12345UL, data, 0.014, 0.5, symbols)
+  let packed = pack_ok(block, 12345UL, data, 0.014, 0.5, symbols)
   assert_true(packed[5].to_int() == 1) // 头里存的是量化值 c_q=1 (0.01)
   let c = unpack_container(packed) catch {
     e => abort("unpack: \{error_text(e)}")
@@ -209,7 +209,7 @@ test "LT5: pack with unrepresentable c (0.004) is rejected with a header error" 
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_container(block, 7UL, block.sources[0], 0.004, 0.5, symbols)
+  let packed = pack_ok(block, 7UL, block.sources[0], 0.004, 0.5, symbols)
   assert_true(packed[5].to_int() == 0) // c_q = 0
   let outcome = try {
     let _ = unpack_container(packed)
@@ -238,7 +238,7 @@ test "LT5: pack with unrepresentable delta (0.004) is rejected with a header err
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_container(block, 8UL, block.sources[0], 0.1, 0.004, symbols)
+  let packed = pack_ok(block, 8UL, block.sources[0], 0.1, 0.004, symbols)
   assert_true(packed[6].to_int() == 0) // delta_q = 0
   let outcome = try {
     let _ = unpack_container(packed)
@@ -268,7 +268,7 @@ test "LT5: pack with delta above 1 writes delta_q=101 and unpack rejects" {
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_container(block, 9UL, block.sources[0], 0.1, 1.01, symbols)
+  let packed = pack_ok(block, 9UL, block.sources[0], 0.1, 1.01, symbols)
   assert_true(packed[6].to_int() == 101)
   let outcome = try {
     let _ = unpack_container(packed)
@@ -300,14 +300,7 @@ test "LT5: image boundaries round trip through pack/unpack" {
     Ok(e) => e
     Err(e) => abort("c=0.005 rejected: \{error_text(e)}")
   }
-  let packed1 = pack_container(
-    block,
-    10UL,
-    data,
-    0.005,
-    0.5,
-    enc1.symbols(0, 3),
-  )
+  let packed1 = pack_ok(block, 10UL, data, 0.005, 0.5, enc1.symbols(0, 3))
   assert_true(packed1[5].to_int() == 1)
   let c1 = unpack_container(packed1) catch {
     e => abort("c_q=1 rejected: \{error_text(e)}")
@@ -320,7 +313,7 @@ test "LT5: image boundaries round trip through pack/unpack" {
     Ok(e) => e
     Err(e) => abort("delta=1.0 rejected: \{error_text(e)}")
   }
-  let packed2 = pack_container(block, 11UL, data, 0.1, 1.0, enc2.symbols(0, 3))
+  let packed2 = pack_ok(block, 11UL, data, 0.1, 1.0, enc2.symbols(0, 3))
   assert_true(packed2[6].to_int() == 100)
   let c2 = unpack_container(packed2) catch {
     e => abort("delta_q=100 rejected: \{error_text(e)}")
@@ -332,14 +325,7 @@ test "LT5: image boundaries round trip through pack/unpack" {
     Ok(e) => e
     Err(e) => abort("c=2.555 rejected: \{error_text(e)}")
   }
-  let packed3 = pack_container(
-    block,
-    12UL,
-    data,
-    2.555,
-    0.5,
-    enc3.symbols(0, 3),
-  )
+  let packed3 = pack_ok(block, 12UL, data, 2.555, 0.5, enc3.symbols(0, 3))
   assert_true(packed3[5].to_int() == 255)
   let _ = unpack_container(packed3) catch {
     e => abort("c_q=255 rejected: \{error_text(e)}")

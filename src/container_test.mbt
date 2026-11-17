@@ -1,4 +1,21 @@
 ///|
+/// 测试夹具：`pack_container` 现在是 `raise` 的（LT20 加了前置校验），而测试
+/// 里每个调用构造的都是**自洽**输入，所以直接 abort 即可 —— 它一旦 raise 就
+/// 说明夹具本身写错了，应当立刻炸掉而不是继续断言。
+fn pack_ok(
+  block : SourceBlock,
+  seed : UInt64,
+  payload : Bytes,
+  c : Double,
+  delta : Double,
+  symbols : Array[Symbol],
+) -> Bytes {
+  pack_container(block, seed, payload, c, delta, symbols) catch {
+    _ => abort("test fixture: pack_container raised (LT20 precondition)")
+  }
+}
+
+///|
 /// 容器格式测试。
 ///
 /// 这一层最重要的三条：
@@ -46,9 +63,7 @@ test "container: header layout is locked byte by byte" {
     Symbol::{ index: 0, data: b"\x11\x12", },
     Symbol::{ index: 7, data: b"\x21\x22", },
   ]
-  let packed = pack_container(
-    block, 0x0102030405060708UL, payload, 0.1, 0.5, symbols,
-  )
+  let packed = pack_ok(block, 0x0102030405060708UL, payload, 0.1, 0.5, symbols)
   inspect(header_len(), content="43")
   // 魔数 "LTC2"
   inspect(packed[0].to_int(), content="76")
@@ -85,9 +100,7 @@ test "container: round trip preserves every field exactly" {
     Symbol::{ index: 1, data: b"\xFF\xFE\xFD", },
     Symbol::{ index: 9, data: b"\x7F\x80\x81", },
   ]
-  let packed = pack_container(
-    block, 0xDEADBEEFCAFEBABEUL, payload, 0.1, 0.5, symbols,
-  )
+  let packed = pack_ok(block, 0xDEADBEEFCAFEBABEUL, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
   inspect(c.k, content="6")
   assert_eq(c.seed, 0xDEADBEEFCAFEBABEUL)
@@ -138,7 +151,7 @@ test "container: truncated input raises, never invents bytes" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02", }]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   // 空
   try {
     let _ = unpack_container(b"")
@@ -183,7 +196,7 @@ test "container: zero-symbol container parses but always decodes Incomplete" {
   let block = sample_block(k, 3)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = []
-  let packed = pack_container(block, 7UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 7UL, payload, 0.1, 0.5, symbols)
   // 只有头部，没有任何符号体
   inspect(packed.length(), content="43")
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
@@ -211,7 +224,7 @@ test "container: bad magic is rejected with BadMagic" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02", }]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   let arr = packed.to_array()
   arr[0] = b'X'
   try {
@@ -234,7 +247,7 @@ test "container: wrong version is rejected with UnsupportedVersion" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02", }]
-  let packed = pack_container(block, 1UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 1UL, payload, 0.1, 0.5, symbols)
   let arr = packed.to_array()
   arr[4] = (container_version + 1).to_byte()
   try {
@@ -285,7 +298,7 @@ test "container: unpacked file is sufficient to decode with no extra args" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 80)
-  let packed = pack_container(block, seed, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, seed, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
   // 只用文件里的字段解码
   let r = decode_full(c.seed, c.k, c.symbol_len, c.symbols, c.c, c.delta) catch {
@@ -326,7 +339,7 @@ test "container: tampered degree-1 symbol is caught by the payload checksum" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 80)
-  let packed = pack_container(block, seed, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, seed, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch { _ => abort("unpack raised") }
   // 找一个度为 1 的符号，篡改它的第一个字节
   let mut target = -1

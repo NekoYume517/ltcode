@@ -157,7 +157,7 @@ test "LT-G: containers produced by pack_container are unaffected" {
     Err(_) => abort("build failed")
   }
   let symbols = enc.symbols(0, 300)
-  let packed = pack_container(block, 3UL, payload, 0.1, 0.5, symbols)
+  let packed = pack_ok(block, 3UL, payload, 0.1, 0.5, symbols)
   let c = unpack_container(packed) catch {
     _ => abort("good container rejected")
   }
