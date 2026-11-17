@@ -336,6 +336,8 @@ pub fn payload_hash(data : Bytes) -> UInt64
 /// 长度与哈希都由它自己算，避免"长度与哈希可以对不上"。
 ///
 /// 前置校验（`raise`；旨在「写出去必须读得回来」）：
+/// - `payload.length() == 0` → `EmptySource`（与 `unpack_container` 的
+///   `payload_len >= 1` 是同一个判据；LT23，2026-11-17-b）；
 /// - `payload.length() > K × symbol_len` → `InvalidHeaderField`；
 /// - 符号体长度 ≠ `symbol_len` → `SymbolLengthMismatch`；
 /// - `c` / `delta` 非有限（`nan` / `inf`）→ `DistributionNotNormalized`，

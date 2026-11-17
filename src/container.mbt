@@ -357,6 +357,22 @@ pub fn pack_container(
   //
   // CLI 路径本来就自洽（同一份 `data` 既切块又算哈希），所以这条校验对
   // `cmd_encode` 是恒真的；它挡的是绕过 CLI 直接调库的用法。
+  //
+  // ── 零长载荷（LT23，2026-11-17-b 审计）────
+  //
+  // LT21 把 `unpack_container` 的 `payload_len` 域收到 `1 ..=`，并在文案里
+  // 断言「the encoder cannot produce a container with a zero-length payload
+  // … so this header can only come from hand-crafted bytes」。那句话在库层
+  // 是**假的**：本函数收 `Bytes::make(0)`（`0 > limit` 为假），于是照样写出
+  // `payload_len = 0` 的头，再被自己的 unpack 判死，报文还反过来告诉用户
+  // 「这份头只可能来自手工字节」—— 而它就是本函数刚写出来的。
+  //
+  // 下界 1 与 `unpack_container` 用同一个判据，理由也与它同源：空输入在
+  // `SourceBlock::from_bytes` 就被 `EmptySource` 拒，编码器**产不出**这种
+  // 容器，所以这里也只能按空输入报。
+  if payload.length() == 0 {
+    raise LtError::EmptySource
+  }
   let limit = block.k.to_int64() * block.symbol_len.to_int64()
   if payload.length().to_int64() > limit {
     raise LtError::InvalidHeaderField(
