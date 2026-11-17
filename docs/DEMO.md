@@ -15,15 +15,19 @@
 > 本文件的输出是**确定性**的（固定种子、无时钟），因此换工具链后逐字不变：
 > 2026-11-13 用上面的环境把下面每一条 **CLI 命令**重跑过一遍，数字与这里
 > 记录的相同（§7 那张表来自库层实验、不是 CLI 输出，见该节注）。
+> 2026-11-17 又逐条重跑了一次（含 §2 的 SHA-256、§3 的 51 个缺失下标、
+> §3b 的两个校验和数值、§5 的 9 点曲线、§6 的三条 `distcmp`），全部逐字
+> 相同；唯一变过的是 §1 的 `moon check` 警告数与 `moon test` 计数（随之
+> 新增的测试涨到 **217**，该块已按本轮实测改写 —— 见审计报告 LT25）。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (516 warnings, 0 errors)
+# Finished. moon: ran 3 tasks, now up to date (721 warnings, 0 errors)
 
 $ moon test
-Total tests: 188, passed: 188, failed: 0.
+Total tests: 217, passed: 217, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
