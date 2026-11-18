@@ -336,6 +336,9 @@ pub fn payload_hash(data : Bytes) -> UInt64
 /// 长度与哈希都由它自己算，避免"长度与哈希可以对不上"。
 ///
 /// 前置校验（`raise`；旨在「写出去必须读得回来」）：
+/// - 手工构造的 `SourceBlock` 若 `K < 1` 或 `symbol_len < 1` → `EmptySource`；
+///   若 `K > max_source_symbols()` → `SourceTooLarge`。字段是公开的，写侧不能
+///   假设它们已经过 `SourceBlock::new/from_bytes` 校验（LT25，2026-11-19）；
 /// - `payload.length() == 0` → `EmptySource`（与 `unpack_container` 的
 ///   `payload_len >= 1` 是同一个判据；LT23，2026-11-17-b）；
 /// - `payload.length() > K × symbol_len` → `InvalidHeaderField`；

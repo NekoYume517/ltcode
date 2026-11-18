@@ -358,6 +358,18 @@ pub fn pack_container(
   // CLI 路径本来就自洽（同一份 `data` 既切块又算哈希），所以这条校验对
   // `cmd_encode` 是恒真的；它挡的是绕过 CLI 直接调库的用法。
   //
+  // ── 手工 SourceBlock 的头部字段（LT25，2026-11-19 审计）────
+  //
+  // SourceBlock 是 pub(all)，调用者可以绕过 new/from_bytes 直接填字段。
+  // K 与 symbol_len 会原样进入容器头，因此写侧必须复核 unpack 的域，不能
+  // 假设它们一定来自正常构造器；否则 oversized K 会写出自己读不回的容器。
+  if block.k < 1 || block.symbol_len < 1 {
+    raise LtError::EmptySource
+  }
+  let max_k = max_source_symbols()
+  if block.k > max_k {
+    raise LtError::SourceTooLarge(block.k, max_k)
+  }
   // ── 零长载荷（LT23，2026-11-17-b 审计）────
   //
   // LT21 把 `unpack_container` 的 `payload_len` 域收到 `1 ..=`，并在文案里
