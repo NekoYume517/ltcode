@@ -466,12 +466,12 @@ cmd/ltcode/
 
 ```bash
 moon check            # 0 errors
-moon test             # 222 tests, all pass
+moon test             # 227 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（222 条，按 `^test "` 计数）：
+测试分布（227 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -515,6 +515,8 @@ moon build --target wasm
 | `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 | `pack_param_finite_test.mbt` | 3 | `pack_container` 的非有限 `c`/`delta` 闸门：四个写读参数的入口同源、`c=1000` 的钳位契约不误伤（2026-11-17-b 审计） |
 | `pack_empty_payload_test.mbt` | 2 | `pack_container` 不再写出 `payload_len=0`（LT21 的编码侧镜像）：空载荷报 `EmptySource`、1 字节载荷照旧打包读回（2026-11-17-b 审计） |
+| `pack_source_block_guard_test.mbt` | 3 | 手工 `SourceBlock` 的 K / symbol_len 域在写侧复核，oversized K 不再写出读不回的容器（LT25，2026-11-19 审计） |
+| `container_payload_len_decode_test.mbt` | 2 | `decode_verified` 拒绝零/超长 `payload_len`，不再用裁切后的哈希制造 `Complete` 假成功（LT26，2026-11-19 审计） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，
