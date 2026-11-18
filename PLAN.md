@@ -163,3 +163,6 @@ ltcode curve    --symbols K --overheads 1.0,1.1,1.2,1.5 --trials 100 --seed S
 - 解码：K=10、overhead=2.0 必成功；K=10、overhead=1.0 可能失败且失败时如实报缺
 - 端到端：随机文件 × 多组 (K, overhead)，成功时逐字节恢复，失败时退出码与缺项正确
 - 每个错误分支至少一条测试
+
+2026-11-19 复验：`moon check` 为 **759 warnings / 0 errors**，`moon test` 为
+**227/227**；`moon fmt --check` 与 `moon build --target wasm` 均通过。

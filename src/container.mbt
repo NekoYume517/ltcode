@@ -719,7 +719,7 @@ pub fn decode_verified(container : Container) -> DecodeResult raise LtError {
       "payload_len",
       container.payload_len.to_uint64(),
       1UL,
-      payload_limit.to_uint64(),
+      payload_limit.reinterpret_as_uint64(),
     )
   }
   if payload_len > payload_limit {
@@ -727,7 +727,7 @@ pub fn decode_verified(container : Container) -> DecodeResult raise LtError {
       "payload_len",
       container.payload_len.to_uint64(),
       1UL,
-      payload_limit.to_uint64(),
+      payload_limit.reinterpret_as_uint64(),
     )
   }
   let result = decode_full(

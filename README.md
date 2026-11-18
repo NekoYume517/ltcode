@@ -465,7 +465,7 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 0 errors
+moon check            # 759 warnings, 0 errors
 moon test             # 227 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
