@@ -702,6 +702,34 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
 /// 后者必须 raise 而不是返回 `Incomplete` —— 它跟"数据不够"是两件事。
 /// 数据不够再要几个符号就行；哈希不符说明数据本身是坏的，再要也没用。
 pub fn decode_verified(container : Container) -> DecodeResult raise LtError {
+  // Container 也是 pub(all)：与 unpack 一样，verified 入口必须先拒绝非法的
+  // payload_len。否则 reassemble 会按 0 裁成空串（或对超长值静默止于实际
+  // 字节），调用者只要配上裁切结果的哈希，就能得到 Complete 假成功。
+  if container.k < 1 || container.symbol_len < 1 {
+    raise LtError::EmptySource
+  }
+  let max_k = max_source_symbols()
+  if container.k > max_k {
+    raise LtError::SourceTooLarge(container.k, max_k)
+  }
+  let payload_limit = container.k.to_int64() * container.symbol_len.to_int64()
+  let payload_len = container.payload_len.to_int64()
+  if payload_len < 1 {
+    raise LtError::InvalidHeaderField(
+      "payload_len",
+      container.payload_len.to_uint64(),
+      1UL,
+      payload_limit.to_uint64(),
+    )
+  }
+  if payload_len > payload_limit {
+    raise LtError::InvalidHeaderField(
+      "payload_len",
+      container.payload_len.to_uint64(),
+      1UL,
+      payload_limit.to_uint64(),
+    )
+  }
   let result = decode_full(
     container.seed,
     container.k,

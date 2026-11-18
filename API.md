@@ -447,6 +447,10 @@ offset  size  field
 ```moonbit
 /// 解码 + 校验的便利入口（CLI 用它）：
 /// Complete 的含义包含"哈希已核对通过"。
+///
+/// 对手工构造的公开 Container，先按 unpack 的同一域复核 K / symbol_len /
+/// payload_len；尤其拒绝 payload_len=0 或大于 K×symbol_len，避免按非法长度
+/// 裁切后用裁切结果的哈希制造 Complete 假成功（LT26，2026-11-19）。
 pub fn decode_verified(container : Container) -> DecodeResult raise LtError
 ```
 
