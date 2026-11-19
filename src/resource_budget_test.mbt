@@ -41,8 +41,15 @@ test "LT27: one-gibibyte container boundary is bidirectional" {
 }
 
 ///|
-test "LT27: header scalars above Int32 are rejected before multiplication" {
-  for input in [(2_147_483_648L, 1L), (1L, 2_147_483_648L)] {
+test "LT27: header scalars outside Int32 are rejected before multiplication" {
+  for
+    input in [
+      (2_147_483_648L, 1L),
+      (1L, 2_147_483_648L),
+      (-1L, 1L),
+      (1L, -1L),
+      (1L, 0L),
+    ] {
     let result = Ok(@src.container_body_bytes(input.0, input.1)) catch {
       e => Err(e)
     }
