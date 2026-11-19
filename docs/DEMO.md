@@ -20,15 +20,17 @@
 > 相同；唯一变过的是 §1 的 `moon check` 警告数与 `moon test` 计数。
 > 2026-11-19 新增回归测试涨到 **227**；本轮新增测试改用限定导入、LT26 新增
 > 守卫改用非弃用转换后，警告数回到 **759**，§1 已按最新实测改写。
+> 2026-11-20 LT27/LT28 新增 9 条回归，测试总数 **236**、`moon check`
+> 实测 **762 warnings / 0 errors**；§9 记录了本轮实际重跑的轻量往返与度量锚点。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (759 warnings, 0 errors)
+# Finished. moon: ran 3 tasks, now up to date (762 warnings, 0 errors)
 
 $ moon test
-Total tests: 227, passed: 227, failed: 0.
+Total tests: 236, passed: 236, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
@@ -308,3 +310,42 @@ moon run cmd/ltcode -- distcmp --symbols 1000 --overhead 1.2 --trials 200 --seed
 
 `--seed` 不给时默认 `0x4C54434F4445`（固定常数，**不是时钟**），
 因此同样的命令在任何机器、任何时间都给出同样的输出。
+
+## 9. 2026-11-20 LT27/LT28 轻量复核
+
+输入与输出均放在 `D:\code\moonbit\audit\2026-11-20\ltcode\evidence`。
+400 字节确定性输入，K=100、count=300；输出逐字节比较相同。这里同时验证
+完整文件公式：`43 + 300 × (4 + 4) = 2443` 字节。
+
+```text
+encoded 400 bytes -> K=100 symbol_len=4 symbols=300 seed=1
+out: D:\code\moonbit\audit\2026-11-20\ltcode\evidence\readme-roundtrip.ltc (2443 bytes)
+decoded OK: K=100 symbols=300 payload=400 bytes (checksum verified)
+out: D:\code\moonbit\audit\2026-11-20\ltcode\evidence\readme-output.bin
+roundtrip bytes=400 verified
+```
+
+实际执行的两条度量命令：
+
+```powershell
+moon run cmd/ltcode -- simulate --symbols 1000 --overhead 1.2 --trials 200 --symbol-len 4 --seed 1
+moon run cmd/ltcode -- distcmp --symbols 1000 --overhead 1.2 --trials 200 --symbol-len 4 --seed 1
+```
+
+```text
+simulate  K=1000  c=0.10  delta=0.50  trials=200  seed=1  symbol_len=4
+
+  overhead  received  successes  rate
+  1.20      1200        162/200      0.810
+
+distcmp  K=1000  overhead=1.20  trials=200  seed=1  symbol_len=4
+
+  distribution          successes  rate
+  robust(c=0.10,d=0.50) 162/200    0.810
+  ideal                 48/200     0.240
+  fixed(5)              0/200      0.000
+```
+
+LT27 的 1 GiB 边界用纯 Int64 算术和 43 字节小头验证，没有创建 1 GiB
+文件或执行大内存探针；精确等值、下一符号、超 Int32 与 `Σ|subset|`
+溢出均由 §1 的 236 条测试覆盖。

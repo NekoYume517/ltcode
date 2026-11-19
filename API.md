@@ -156,6 +156,14 @@ pub(all) struct ReceivedSymbol { index : Int, data : Bytes } derive(Eq, Debug)
 `payload_len` 截回。补零发生在这里是有意的（并且 `payload_len` 记录了
 真实长度），与"解码时用假数据填缺符号"是两件事。
 
+**手工 `SourceBlock` 也必须复核（LT28，2026-11-20）**：字段是 `public(all)`，
+调用方能绕过 `new/from_bytes`。`SourceBlock::new/from_bytes`、
+`Encoder::new/try_new` 与 `pack_container` 共用同一份形状检查：
+`sources.length() == K` 且每个源符号长度都等于 `symbol_len`。缺源/多源报
+`InvalidSourceBlock`，源长不齐报 `SymbolLengthMismatch`；负 `K`、负
+`symbol_len` 与空源一样报 `EmptySource`，不会流入度数采样或数组分配。
+合法手工块与构造器产生的块逐符号一致。
+
 ## 5. 编码 `src/encoder.mbt`
 
 ```moonbit
@@ -339,6 +347,10 @@ pub fn payload_hash(data : Bytes) -> UInt64
 /// - 手工构造的 `SourceBlock` 若 `K < 1` 或 `symbol_len < 1` → `EmptySource`；
 ///   若 `K > max_source_symbols()` → `SourceTooLarge`。字段是公开的，写侧不能
 ///   假设它们已经过 `SourceBlock::new/from_bytes` 校验（LT25，2026-11-19）；
+/// - `sources.length() != K` → `InvalidSourceBlock`；源长不齐 →
+///   `SymbolLengthMismatch`（LT28，2026-11-20）；
+/// - `43 + count × (4 + symbol_len) > 1 GiB` → `ResourceLimitExceeded`，
+///   在写任何符号前拒绝（LT27）；
 /// - `payload.length() == 0` → `EmptySource`（与 `unpack_container` 的
 ///   `payload_len >= 1` 是同一个判据；LT23，2026-11-17-b）；
 /// - `payload.length() > K × symbol_len` → `InvalidHeaderField`；
@@ -354,7 +366,34 @@ pub(all) struct Container {
 } derive(Debug)
 
 pub fn unpack_container(data : Bytes) -> Container raise LtError
+
+/// LT27（2026-11-20）：读写共用的资源算术；负值与超 Int32 标量先拒绝。
+pub const CONTAINER_HEADER_BYTES : Int64 = 43
+pub const MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
+pub const MAX_ARRAY_LENGTH : Int64 = 2_147_483_647
+pub fn container_body_bytes(count : Int64, symbol_len : Int64)
+  -> Int64 raise LtError             // count × (4 + symbol_len)
+pub fn container_file_bytes(count : Int64, symbol_len : Int64)
+  -> Int64 raise LtError             // 43 + body
+pub fn check_container_budget(count : Int64, symbol_len : Int64)
+  -> Unit raise LtError              // 完整 file <= 1 GiB
+pub fn checked_subset_slots(running : Int64, degree : Int32)
+  -> Int64 raise LtError             // 累计值 <= Int32.MAX
+pub fn checked_allocation_length(name : String, value : Int64)
+  -> Int32 raise LtError
 ```
+
+资源上限按**完整容器文件**计算，不是只算符号区。`pack_container` 在写符号前、
+`unpack_container` 在拟合 count/读符号体前、`decode_with_stats` 在 acc/rem/CSR
+分配前调用同一预算；`decode_verified` 还在返回已解码字节前检查输出长度。
+CLI 的 `container_size_bytes` 为兼容旧测试仍只返回 body，真正的拒绝文案使用
+`container_file_bytes`。边界测试分别锁定 `file == 1 GiB` 放行、下一个符号
+拒绝，以及 `body == 1 GiB` 不能误判为合法文件。
+
+剥皮内部的 `Σ|subset|`、CSR offsets/running 用 Int64 累加；转成
+`FixedArray` 的 Int32 容量前必须经 `checked_subset_slots` /
+`checked_allocation_length`。这修的是回绕成负容量，不改变公开
+`DecodeStats.subset_slots` 与 `xor_bytes` 的既有 Int32 类型或后者记录性回绕契约。
 
 ### 头部的域校验（LT-A / LT-D / LT-G / LT3，2026-11-10 / 2026-11-13 审计）
 
@@ -373,6 +412,7 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError
 | `symbol_len` | `1 ..= Int32.MAX`（**只看字段自身**） | `InvalidHeaderField("symbol_len", …)` |
 | `payload_len` | `1 ..= min(K × symbol_len, 2^31−1)`（LT21：编码器产不出零长载荷，`0` 只能来自手工字节） | `InvalidHeaderField("payload_len", …)` |
 | `count` | `0 ..= Int32 上限`，且 `<= 剩余字节 / (4 + symbol_len)` | 超 `Int32` → `InvalidHeaderField`；**仅**超出剩余容量 → `TruncatedSymbol` |
+| 完整文件 | `43 + count × (4 + symbol_len) <= 1 GiB`；在 count 拟合和符号体读取前检查 | `ResourceLimitExceeded("container_bytes", …)` |
 | `c_q` | `1 ..= 255`（即 `c > 0`，量化后的像） | `InvalidHeaderField("c_q", …)` |
 | `delta_q` | `1 ..= 100`（即 `0 < δ <= 1`） | `InvalidHeaderField("delta_q", …)` |
 | 尾部 | 读完 `count` 个符号后必须**恰好**用完文件 | `TrailingBytes(已消费, 总长)` |
@@ -461,6 +501,8 @@ pub(all) suberror LtError {
   EmptySource
   SourceTooLarge(Int, Int)
   SymbolLengthMismatch(Int, Int)
+  /// 手工 SourceBlock 的声明 K 与 sources.length() 不一致（LT28）。
+  InvalidSourceBlock(String)
   InvalidDegree(Int, Int)
   DistributionNotNormalized(Double)
   TruncatedSymbol(Int, Int)
@@ -483,6 +525,9 @@ pub(all) suberror LtError {
   /// **两个方向**：截断是"读不到"，尾部多余是"读完了还剩"。混成一个变体
   /// 会让调用方分不清该重传还是该丢弃。
   TrailingBytes(UInt64, UInt64)
+  /// 分配或 I/O 前的资源需求超上限（资源名, 需求, 上限）；负需求也在此
+  /// 明确拒绝，不做有符号→无符号转换（LT27）。
+  ResourceLimitExceeded(String, Int64, Int64)
 } derive(Eq, Debug)
 
 pub fn error_text(e : LtError) -> String
@@ -512,8 +557,8 @@ LT-G 又修了一次同类错位：`K` 变负曾报 `empty source`（把"头部�
 `BadMagic` 的文本**不带** `not a ltcode container:` 前缀：`cmd_decode` 已经
 加了那一段，重复会让实际输出变成两个前缀叠在一起。
 
-退出码映射：`CorruptionDetected` / `InvalidHeaderField` / `TrailingBytes`
-一律走 **3**（输入错误），不是 **1**。理由：退出码 1 的语义是“还差几个
+退出码映射：`CorruptionDetected` / `InvalidHeaderField` / `TrailingBytes` /
+`ResourceLimitExceeded` / `InvalidSourceBlock` 一律走 **3**（输入错误），不是 **1**。理由：退出码 1 的语义是“还差几个
 符号，再给我一些就能解”（调用方的正常控制流），而这三者是“这批数据
 不可用”（调用方应该丢弃并重新接收），两者对调用方的动作指引不同。
 
@@ -586,7 +631,7 @@ pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
 pub const LT_MAX_WORK        : Int64 = 2_000_000
 /// LT8（2026-11-17）：字节轴。每个符号操作实际处理 symbol_len 字节
 pub const LT_MAX_WORK_BYTES  : Int64 = 2_000_000_000
-/// LT9（2026-11-17）：encode 的容器字节上限（count x (4 + symbol_len)）
+/// LT9/LT27：encode 的完整容器文件上限（43 + count x (4 + symbol_len)）
 pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
 /// LT10（2026-11-17）：curve 的点数上限与整条命令的总预算
 pub const LT_MAX_OVERHEAD_POINTS : Int32 = 64
@@ -603,7 +648,7 @@ pub fn guard_work_scaled(trials : Int32, k : Int32, overhead : Double,
 pub fn guard_overhead_points(points : Int32) -> String
 pub fn guard_work_total(points : Int32, trials : Int32,
   total_work : Int64, total_bytes : Int64) -> String
-/// LT9（2026-11-17）：容器字节数与其上限文案
+/// container_size_bytes 保留 body 语义；bound_msg 按完整 file 判定（LT27）。
 pub fn container_size_bytes(count : Int32, symbol_len : Int32) -> Int64
 pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String
 pub fn guard_symbol_len(symbol_len : Int32) -> String

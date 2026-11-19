@@ -665,7 +665,8 @@ pub fn default_count_overflow_msg(k : Int32) -> String {
 pub const LT_MAX_CONTAINER_BYTES : Int64 = @lib.MAX_CONTAINER_BYTES
 
 ///|
-/// 一个容器的字节数：`count × (4 + symbol_len)`（LT9）。
+/// 容器符号区 body 的字节数：`count × (4 + symbol_len)`（LT9/LT27）。
+/// 完整文件另有 43 字节头；真正的上限判断用 `container_file_bytes`。
 ///
 /// 每个符号占 4 字节 index + `symbol_len` 字节符号体，与 `unpack_container`
 /// 里 `body_len = 4 + symbol_len` 的除法口径**逐字一致** —— 判断「写得出、

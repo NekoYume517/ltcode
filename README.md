@@ -456,6 +456,7 @@ src/
   decoder.mbt       剥皮解码 + 操作计数
   metrics.mbt       成功率、曲线、分布对照
   container.mbt     自描述文件格式
+  resource.mbt      读写共享的 Int64 资源预算与容量检查
   error.mbt         错误类型
 cmd/ltcode/
   main.mbt          参数解析 + 子命令分发
@@ -465,13 +466,13 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 759 warnings, 0 errors
-moon test             # 227 tests, all pass
+moon check            # 762 warnings, 0 errors
+moon test             # 236 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（227 条，按 `^test "` 计数）：
+测试分布（236 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -504,7 +505,7 @@ moon build --target wasm
 | `usage_coverage_wbtest.mbt` | 2 | `help` 与 `accepted_keys` 必须互相投影（2026-11-12 审计） |
 | `solvability_note_wbtest.mbt` | 6 | `encode` 末尾可解性验算：解不出必说、解得出逐字不变、闸门 `count <= 4096`、`--count 0` 优先（2026-11-12 followup） |
 | `metric_work_bytes_wbtest.mbt` | 4 | 工作预算的**字节轴**：`--symbol-len` 组合被拦、默认 sl 不误伤、上界±1、全部文档命令逐条代进（2026-11-17 审计） |
-| `container_bytes_bound_test.mbt` | 4 | `encode` 的容器字节上限 1 GiB、边界精确、零符号容器与文档 encode 命令不误伤（2026-11-17 审计） |
+| `container_bytes_bound_test.mbt` | 4 | `encode` 的完整容器文件上限 1 GiB（含 43 字节头）、精确边界、零符号容器与文档 encode 命令不误伤（LT27 复核） |
 | `metric_points_guard_wbtest.mbt` | 3 | `curve --overheads` 点数 ≤ 64 与整条命令的总预算（符号轴 + 字节轴）（2026-11-17 审计） |
 | `metric_distcmp_factor_wbtest.mbt` | 2 | `distcmp` 的预算按实测 1.94× 保守乘 2，simulate/curve 边界不变（2026-11-17 审计） |
 | `param_image_test.mbt` | 4 | 参数越界报 `ParamOutOfImage`（不再借分布文案）、`try_new` 与 `new` 的钳位/拒绝矩阵、逐符号一致性（2026-11-17 审计） |
@@ -517,6 +518,8 @@ moon build --target wasm
 | `pack_empty_payload_test.mbt` | 2 | `pack_container` 不再写出 `payload_len=0`（LT21 的编码侧镜像）：空载荷报 `EmptySource`、1 字节载荷照旧打包读回（2026-11-17-b 审计） |
 | `pack_source_block_guard_test.mbt` | 3 | 手工 `SourceBlock` 的 K / symbol_len 域在写侧复核，oversized K 不再写出读不回的容器（LT25，2026-11-19 审计） |
 | `container_payload_len_decode_test.mbt` | 2 | `decode_verified` 拒绝零/超长 `payload_len`，不再用裁切后的哈希制造 `Complete` 假成功（LT26，2026-11-19 审计） |
+| `resource_budget_test.mbt` | 6 | body/file 分离、完整文件 1 GiB 精确边界、负值/超 Int32 标量、`Σ|subset|` 与 decoded_bytes 转换、43 字节小头在读符号前拒绝（LT27，2026-11-20 审计） |
+| `encoder_source_block_test.mbt` | 3 | 手工 `SourceBlock` 少源/多源/源长不齐被 Encoder 拒绝，合法手工块逐字节兼容（LT28，2026-11-20 审计） |
 
 详细的方法与踩过的坑见 [docs/implementation.md](docs/implementation.md)，
 每个命令的实际运行记录见 [docs/DEMO.md](docs/DEMO.md)，

@@ -614,3 +614,66 @@ delta_q=1..100）：分布均归一、PMF/CDF 有限且单调、采样域正确�
 覆盖各头部字段、index/body、截断和尾部追加；结构错误均 exit 3，合法零符号
 容器如实 exit 1，失败路径不写也不改输出文件。`distcmp` 的三种分布仍按各自
 实验点计预算：实测并非固定三倍耗时，既有契约也是逐点上限，未机械乘三修改。
+
+## 16. 2026-11-20 轮：容器资源预算与手工 SourceBlock（LT27 / LT28）
+
+### LT27：写读两侧的体积口径与 CSR 求和必须同源
+
+基线为 227/227。旧 CLI 的 `container_size_bytes` 只算
+`count × (4 + symbol_len)`，它是符号区 body；真正写盘还多 43 字节头。
+库层 `pack_container` 与 `unpack_container` 又没有共享这道体积预算，直接
+`decode_with_stats` 会在 acc/rem/CSR 之前独立展开资源。另一个独立溢出点是
+剥皮的 `Σ|subset|`：旧 `subset_slots`、CSR running/offsets 用 Int32，总和
+超过 `2^31−1` 后可变成负容量。不能通过实际创建二十亿个槽来测试这种问题。
+
+修复落在 `src/resource.mbt` 与 commit `18e32c9`：
+
+- `container_body_bytes = count × (4 + symbol_len)`；
+  `container_file_bytes = 43 + body`。count 与 symbol_len 先限制在非负
+  Int32 域（symbol_len 至少 1），所以乘法始终在 Int64 内完成；负值不会
+  经无符号转换混过去。
+- `check_container_budget` 按完整 file 执行既有 **1 GiB** 上限。pack 在写
+  符号前、unpack 在 count 拟合/读符号体前、direct decode 在 acc/rem/CSR
+  分配前调用；verified decode 在重组返回字节前检查 Int32 输出容量。
+- CLI 保留 `container_size_bytes` 的 body 语义以免翻转旧契约，但真正的
+  `container_bytes_bound_msg` 按完整 file 判定。
+- 剥皮的 `subset_slots`、CSR running/offsets 改以 Int64 累加；每次累加及
+  最终 `FixedArray` 容量转换都检查 `<= Int32.MAX`。公开 `DecodeStats`
+  字段类型不变，尤其 `xor_bytes` 的既有 Int32 裁定没有翻案。
+
+精确边界不是拿 `1 GiB / 44` 直接当下标：步长 44 时
+`floor((1 GiB−43)/44) = 24,403,222`，file=1,073,741,811 放行，下一个
+file=limit+31 拒绝。步长 631 能整除 `1 GiB−43`，所以 count=1,701,651、
+symbol_len=627 时 file 恰好等于 1,073,741,824，必须放行；下一个符号的
+file=limit+631，必须拒绝。另有 43 字节小头声明 1 GiB 符号体，验证 unpack
+在读取/分配符号体之前报 `ResourceLimitExceeded`，没有生成大文件。
+
+### LT28：public(all) 不等于“字段已经合法”
+
+`SourceBlock` 的字段全公开，旧 `Encoder::new/try_new` 只使用声明的 K 建
+分布，没有复核 `sources.length()==K` 和每个源的长度。少源在后续
+`block.sources[j]` 可越界；源长不齐时 `xor_into` 对短源只 XOR 短的部分，
+会静默产出错码。红测试用 `K=2` 只有一个源、以及第二个源长为 2 的两个小
+对象，分别证明 `Encoder::new` 错误返回 Ok；没有触发后续 panic。
+
+修复在 commit `fa04aae`：共享 `validate_source_block` 接入两个 SourceBlock
+构造器、Encoder 两个入口和 pack。声明 K 与源数组数量不一致报
+`InvalidSourceBlock`，长度不一致仍报 `SymbolLengthMismatch`；空源、负 K/
+负 symbol_len 与超 K 保持既有错误类别。合法手工块与 `SourceBlock::new`
+产生的块在相同 seed/index 下逐字节相同。
+
+### 实测与未改项
+
+最终 236/236，`moon check`、`moon fmt --check`、`moon build --target wasm`
+全绿；`moon check` 为 762 warnings / 0 errors（其中本轮共享形状校验新增
+一条既有风格类 warning，未借此清理整库旧告警）。400 字节输入经 K=100、
+count=300 编解码逐字节一致，容器实际 2443 字节；K=1000、trials=200、
+overhead=1.2 的 simulate 为 162/200，distcmp 依次为 0.810/0.240/0.000。
+
+复核后没有实锤、因此未改：pack 对有限 c=1000→2.55 的钳位像契约；有限
+c/delta 越像由 unpack 明确拒绝的 LT5 裁定；零 payload 的 LT21/LT23/LT26
+行为；符号 index 类型；大容器 decode 的 1 GiB 常数；`trials × max(K,
+received) × symbol_len` 与 distcmp 2x 的现有双向预算。`guard_work_scaled`
+的 dist_factor 只是 CLI 内部以 1/2 调用的助手，没有库层公开契约，本轮
+未凭假设负参数调用另造行为变更。所有边界均为纯算术/小夹具，未执行 GB
+分配或数十分钟探针。
