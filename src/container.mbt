@@ -410,6 +410,11 @@ pub fn pack_container(
     Err(e) => raise e
     Ok(_) => ()
   }
+  // LT27：完整文件（含 43 字节头）先过读写共用预算，再写任何符号。
+  check_container_budget(
+    symbols.length().to_int64(),
+    block.symbol_len.to_int64(),
+  )
   let out : Array[Byte] = []
   for m in container_magic {
     out.push(m)
@@ -640,6 +645,8 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   if count_raw > int32_max_u {
     raise LtError::InvalidHeaderField("count", count_raw, 0UL, count_max)
   }
+  // LT27：声明体积先于 count 拟合和符号体读取；只读 43 字节小头即可拒绝。
+  check_container_budget(count_raw.to_int().to_int64(), symbol_len.to_int64())
   if count_raw > count_max {
     // 报「够读几个符号 / 头部说要几个」而不是把两个字节数硬凑成同一量纲：
     // 这里说的就是符号个数，用户不需要自己再做一次除法。
@@ -730,6 +737,10 @@ pub fn decode_verified(container : Container) -> DecodeResult raise LtError {
       payload_limit.reinterpret_as_uint64(),
     )
   }
+  check_container_budget(
+    container.symbols.length().to_int64(),
+    container.symbol_len.to_int64(),
+  )
   let result = decode_full(
     container.seed,
     container.k,
@@ -741,7 +752,11 @@ pub fn decode_verified(container : Container) -> DecodeResult raise LtError {
   match result {
     Incomplete(_, _) => result
     Complete(sources) => {
-      let bytes = reassemble(sources, container.payload_len)
+      let decoded_len = checked_allocation_length(
+        "decoded_bytes",
+        container.payload_len.to_int64(),
+      )
+      let bytes = reassemble(sources, decoded_len)
       let actual = payload_hash(bytes)
       if actual != container.payload_hash {
         raise LtError::CorruptionDetected(actual, container.payload_hash)

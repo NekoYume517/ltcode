@@ -64,6 +64,8 @@ pub(all) suberror LtError {
   /// 变体既要报 "c=0.004 太小（量化为 0）"，也要报 "c=1000 太大（量化为
   /// 100000，装不进一个字节）"。上界是**开区间**：`c=2.555` 量化成 256。
   ParamOutOfImage(String, Double, Double, Double)
+  /// 资源需求在分配或 I/O 前超过显式上限（资源名, 需求, 上限）。
+  ResourceLimitExceeded(String, Int64, Int64)
 }
 
 ///|
@@ -110,5 +112,11 @@ pub fn error_text(e : LtError) -> String {
       "payload checksum mismatch: got 0x\{actual.to_string(radix=16)}, expected 0x\{expected.to_string(radix=16)}; the received symbols are corrupted or mixed from another encoding"
     ParamOutOfImage(name, value, low, high) =>
       "parameter \{name}=\{value} is outside the container's quantized grid [\{low}, \{high}): the header stores round(\{name}*100) in a single byte, so \{name} must round to an integer in that range"
+    ResourceLimitExceeded(name, actual, limit) =>
+      if actual < 0L {
+        "invalid resource requirement: \{name}=\{actual} must be non-negative"
+      } else {
+        "resource limit exceeded: \{name}=\{actual} exceeds the maximum \{limit}; reduce the container or symbol dimensions before allocating or performing I/O"
+      }
   }
 }

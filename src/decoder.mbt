@@ -184,8 +184,10 @@ fn peel(
   symbol_len : Int32,
   received : Array[ReceivedSymbol],
   dist : Distribution,
-) -> (DecodeResult, DecodeStats) {
+) -> (DecodeResult, DecodeStats) raise LtError {
   let n = received.length()
+  // 与容器读写共用同一体积口径；在 acc/rem/CSR 分配前拒绝超限。
+  check_container_budget(n.to_int64(), symbol_len.to_int64())
   // 每个收到符号：未解出的源下标集合
   let rem : Array[Array[Int32]] = Array::make(n, [])
   // 每个收到符号：累积值（工作区，原地 XOR）
@@ -195,12 +197,13 @@ fn peel(
   )
   // 反向索引（CSR）：源下标 -> 包含它的收到符号位置
   let counts : FixedArray[Int32] = FixedArray::make(k + 1, 0)
-  let mut subset_slots = 0
+  // 统计求和与 CSR 容量用 Int64；公开 stats 仍在返回前转换。
+  let mut subset_slots = 0L
   // 第一遍：算子集 + 计数
   for r = 0; r < n; r = r + 1 {
     let subset = subset_for(seed, received[r].index, k, dist)
     rem[r] = subset
-    subset_slots = subset_slots + subset.length()
+    subset_slots = checked_subset_slots(subset_slots, subset.length())
     for s in subset {
       counts[s] = counts[s] + 1
     }
@@ -210,19 +213,22 @@ fn peel(
     }
   }
   // CSR 偏移
-  let offsets : FixedArray[Int32] = FixedArray::make(k + 1, 0)
-  let mut running = 0
+  let offsets : FixedArray[Int64] = FixedArray::make(k + 1, 0L)
+  let mut running = 0L
   for s = 0; s < k; s = s + 1 {
     offsets[s] = running
-    running = running + counts[s]
+    running = checked_subset_slots(running, counts[s])
   }
   offsets[k] = running
   let fill : FixedArray[Int32] = FixedArray::make(k, 0)
-  let rev : FixedArray[Int32] = FixedArray::make(running, 0)
+  let rev : FixedArray[Int32] = FixedArray::make(
+    checked_allocation_length("subset_slots", running),
+    0,
+  )
   for r = 0; r < n; r = r + 1 {
     for s in rem[r] {
-      let pos = offsets[s] + fill[s]
-      rev[pos] = r
+      let pos = offsets[s] + fill[s].to_int64()
+      rev[pos.to_int()] = r
       fill[s] = fill[s] + 1
     }
   }
@@ -298,8 +304,8 @@ fn peel(
     rem[r] = []
     resolved_count = resolved_count + 1
     // 从所有包含 s 的符号里消去
-    let from = offsets[s]
-    let to = offsets[s] + counts[s]
+    let from = offsets[s].to_int()
+    let to = (offsets[s] + counts[s].to_int64()).to_int()
     for idx = from; idx < to; idx = idx + 1 {
       let r2 = rev[idx]
       if rem[r2].length() == 0 {
@@ -324,7 +330,7 @@ fn peel(
   }
   let stats : DecodeStats = {
     received: n,
-    subset_slots,
+    subset_slots: checked_allocation_length("subset_slots", subset_slots),
     resolved: resolved_count,
     xor_bytes,
     inconsistent,

@@ -662,7 +662,7 @@ pub fn default_count_overflow_msg(k : Int32) -> String {
 /// ≈ 1.4 GB RSS，安全；而**域内最大合法用途**（K ≈ 1e6、4 字节符号）
 /// 只有 4 MB，离上限三个数量级，README/DEMO 的每条 encode 命令都在
 /// 1.3 KB ~ 13 KB 量级。
-pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824L
+pub const LT_MAX_CONTAINER_BYTES : Int64 = @lib.MAX_CONTAINER_BYTES
 
 ///|
 /// 一个容器的字节数：`count × (4 + symbol_len)`（LT9）。
@@ -672,7 +672,9 @@ pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824L
 /// 读不回」必须两边用同一个式子。Int64：`count ≤ 1e6`、`symbol_len` 可达
 /// Int32 上限，Int32 乘法会回绕。
 pub fn container_size_bytes(count : Int32, symbol_len : Int32) -> Int64 {
-  count.to_int64() * (4L + symbol_len.to_int64())
+  @lib.container_body_bytes(count.to_int64(), symbol_len.to_int64()) catch {
+    _ => LT_MAX_CONTAINER_BYTES + 1L
+  }
 }
 
 ///|
@@ -682,9 +684,11 @@ pub fn container_size_bytes(count : Int32, symbol_len : Int32) -> Int64 {
 /// 4 MB，在 4000 字节符号下是 4.1 GB。文案点名 `--count`、`symbol_len` 与
 /// 真实公式，让用户知道该改哪一头（加大 `--symbols` 会让符号变短）。
 pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String {
-  let size = container_size_bytes(count, symbol_len)
+  let size = @lib.container_file_bytes(count.to_int64(), symbol_len.to_int64()) catch {
+    _ => LT_MAX_CONTAINER_BYTES + 1L
+  }
   if size > LT_MAX_CONTAINER_BYTES {
-    "--count \{count} with symbol_len=\{symbol_len} writes \{size} bytes (count x (4 + symbol_len)), above the container limit of \{LT_MAX_CONTAINER_BYTES}; lower --count or raise --symbols so that each symbol is shorter"
+    "--count \{count} with symbol_len=\{symbol_len} writes \{size} bytes (43 + count x (4 + symbol_len)), above the container limit of \{LT_MAX_CONTAINER_BYTES}; lower --count or raise --symbols so that each symbol is shorter"
   } else {
     ""
   }

@@ -6,6 +6,22 @@ import {
 }
 
 // Values
+pub const CONTAINER_HEADER_BYTES : Int64 = 43
+
+pub const MAX_ARRAY_LENGTH : Int64 = 2_147_483_647
+
+pub const MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
+
+pub fn check_container_budget(Int64, Int64) -> Unit raise LtError
+
+pub fn checked_allocation_length(String, Int64) -> Int32 raise LtError
+
+pub fn checked_subset_slots(Int64, Int32) -> Int64 raise LtError
+
+pub fn container_body_bytes(Int64, Int64) -> Int64 raise LtError
+
+pub fn container_file_bytes(Int64, Int64) -> Int64 raise LtError
+
 pub let container_magic : FixedArray[Byte]
 
 pub let container_version : Int32
@@ -137,6 +153,7 @@ pub(all) suberror LtError {
   TrailingBytes(UInt64, UInt64)
   CorruptionDetected(UInt64, UInt64)
   ParamOutOfImage(String, Double, Double, Double)
+  ResourceLimitExceeded(String, Int64, Int64)
 }
 
 // Types and methods

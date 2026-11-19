@@ -32,12 +32,15 @@ test "LT9: count x (4 + symbol_len) above 1 GiB is rejected" {
 }
 
 ///|
-/// 边界精确：恰好 1 GiB 放行，多一个符号就拒。`symbol_len=40` 时每符号
-/// 44 字节，`1073741824 / 44 = 24403223.27`。
+/// 边界精确：预算含 43 字节头。`symbol_len=40` 时步长 44，
+/// `floor((1073741824 - 43) / 44) = 24403222`。
 test "LT9: the 1 GiB boundary is exact" {
-  assert_true(container_size_bytes(24403223, 40) == 1073741812L)
-  inspect(container_bytes_bound_msg(24403223, 40), content="")
-  assert_true(!container_bytes_bound_msg(24403224, 40).is_empty())
+  assert_true(container_size_bytes(24403222, 40) == 1073741768L)
+  inspect(container_bytes_bound_msg(24403222, 40), content="")
+  assert_true(!container_bytes_bound_msg(24403223, 40).is_empty())
+  // 步长 631 整除 1 GiB - 43，验证 file == limit 仍放行。
+  inspect(container_bytes_bound_msg(1701651, 627), content="")
+  assert_true(!container_bytes_bound_msg(1701652, 627).is_empty())
 }
 
 ///|
