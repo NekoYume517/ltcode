@@ -12,6 +12,8 @@ pub(all) suberror LtError {
   SourceTooLarge(Int32, Int32)
   /// 源符号之间长度不一致（长度 a, 长度 b）
   SymbolLengthMismatch(Int32, Int32)
+  /// 手工 SourceBlock 的声明字段与实际源数组不一致（原因）。
+  InvalidSourceBlock(String)
   /// 度数非法（d, K），要求 1 <= d <= K
   InvalidDegree(Int32, Int32)
   /// 分布未归一化（实际求和值），要求 |Σμ - 1| <= 1e-12
@@ -82,6 +84,7 @@ pub fn error_text(e : LtError) -> String {
       "source too large: K=\{k} exceeds the limit of \{limit} source symbols"
     SymbolLengthMismatch(a, b) =>
       "symbol length mismatch: \{a} vs \{b}; all source symbols must be equal length"
+    InvalidSourceBlock(reason) => "invalid source block: \{reason}"
     InvalidDegree(d, k) =>
       "invalid degree \{d}: must satisfy 1 <= d <= K (\{k})"
     DistributionNotNormalized(sum) =>

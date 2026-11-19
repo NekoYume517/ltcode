@@ -56,6 +56,10 @@ pub fn Encoder::new(
   c : Double,
   delta : Double,
 ) -> Result[Encoder, LtError] {
+  match validate_source_block(block) {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   let qc = match quantized_pair(c, delta) {
     Err(e) => return Err(e)
     Ok(pair) => pair
@@ -83,6 +87,10 @@ pub fn Encoder::try_new(
   c : Double,
   delta : Double,
 ) -> Result[Encoder, LtError] {
+  match validate_source_block(block) {
+    Ok(_) => ()
+    Err(e) => return Err(e)
+  }
   let qc = match quantized_pair_strict(c, delta) {
     Err(e) => return Err(e)
     Ok(pair) => pair

@@ -144,6 +144,7 @@ pub(all) suberror LtError {
   EmptySource
   SourceTooLarge(Int32, Int32)
   SymbolLengthMismatch(Int32, Int32)
+  InvalidSourceBlock(String)
   InvalidDegree(Int32, Int32)
   DistributionNotNormalized(Double)
   TruncatedSymbol(Int32, Int32)

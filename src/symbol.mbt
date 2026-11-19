@@ -36,6 +36,38 @@ pub fn max_source_symbols() -> Int32 {
 }
 
 ///|
+/// public(all) 字段意味着任何调用方都能绕开构造器。所有信任 SourceBlock 的
+/// 入口共用这份形状复核；错误顺序保持构造器既有契约。
+fn validate_source_block(block : SourceBlock) -> Result[Unit, LtError] {
+  let k = block.k
+  if k < 1 || block.sources.is_empty() {
+    return Err(LtError::EmptySource)
+  }
+  let limit = max_source_symbols()
+  if k > limit {
+    return Err(LtError::SourceTooLarge(k, limit))
+  }
+  if block.symbol_len < 1 {
+    return Err(LtError::EmptySource)
+  }
+  let actual_k = block.sources.length()
+  if actual_k != k {
+    return Err(
+      LtError::InvalidSourceBlock(
+        "declared K=\{k} but sources.length()=\{actual_k}",
+      ),
+    )
+  }
+  for source in block.sources {
+    let other = source.length()
+    if other != block.symbol_len {
+      return Err(LtError::SymbolLengthMismatch(block.symbol_len, other))
+    }
+  }
+  Ok(())
+}
+
+///|
 /// 构造源块。所有错误分支都是显式返回，不做静默修正
 /// （长度不齐时不补零 —— 补零会让解码器恢复出「看起来对但多了零字节」的数据）。
 pub fn SourceBlock::new(sources : Array[Bytes]) -> Result[SourceBlock, LtError] {
@@ -57,7 +89,11 @@ pub fn SourceBlock::new(sources : Array[Bytes]) -> Result[SourceBlock, LtError] 
       return Err(LtError::SymbolLengthMismatch(len, other))
     }
   }
-  Ok({ k, symbol_len: len, sources, })
+  let block = { k, symbol_len: len, sources, }
+  match validate_source_block(block) {
+    Ok(_) => Ok(block)
+    Err(e) => Err(e)
+  }
 }
 
 ///|
@@ -104,7 +140,11 @@ pub fn SourceBlock::from_bytes(
     }
     sources.push(Bytes::from_array(work))
   }
-  Ok({ k, symbol_len, sources, })
+  let block = { k, symbol_len, sources, }
+  match validate_source_block(block) {
+    Ok(_) => Ok(block)
+    Err(e) => Err(e)
+  }
 }
 
 ///|

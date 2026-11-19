@@ -370,6 +370,10 @@ pub fn pack_container(
   if block.k > max_k {
     raise LtError::SourceTooLarge(block.k, max_k)
   }
+  match validate_source_block(block) {
+    Ok(_) => ()
+    Err(e) => raise e
+  }
   // ── 零长载荷（LT23，2026-11-17-b 审计）────
   //
   // LT21 把 `unpack_container` 的 `payload_len` 域收到 `1 ..=`，并在文案里
