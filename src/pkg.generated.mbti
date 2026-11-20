@@ -14,6 +14,8 @@ pub const MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
 
 pub fn check_container_budget(Int64, Int64) -> Unit raise LtError
 
+pub fn check_encode_budget(Int64, Int64, Int64) -> Unit raise LtError
+
 pub fn checked_allocation_length(String, Int64) -> Int32 raise LtError
 
 pub fn checked_subset_slots(Int64, Int32) -> Int64 raise LtError
@@ -47,6 +49,8 @@ pub fn dequantize_param(Int32) -> Double
 pub fn distribute_from_array(Int32, Array[Double]) -> Distribution
 
 pub fn distribution_comparison(Int32, Double, Int32, UInt64, Int32) -> Array[(String, CurvePoint)] raise LtError
+
+pub fn encode_peak_bytes(Int64, Int64, Int64) -> Int64 raise LtError
 
 pub fn encode_symbol(UInt64, Int32, Array[Bytes]) -> Bytes raise LtError
 

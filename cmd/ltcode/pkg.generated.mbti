@@ -36,6 +36,8 @@ pub fn default_count_overflow_msg(Int32) -> String
 
 pub fn encode_note(Int32) -> String
 
+pub fn encode_peak_bound_msg(Int32, Int32, Int32) -> String
+
 pub fn explicit_count_overflow_msg(Int32) -> String
 
 pub fn guard_overhead(Int32, Double) -> String

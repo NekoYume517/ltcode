@@ -62,6 +62,51 @@ pub fn check_container_budget(
 }
 
 ///|
+/// `encode` / `pack_container` 一次调用的**峰值工作集**：`payload + 43 +
+/// count × (4 + symbol_len)`（全 Int64）。
+///
+/// LT30（2026-11-21 审计）：容器字节不是峰值。同一次调用里同时活着
+/// payload（输入文件）、每个符号的 body（`Encoder::symbols` 的产物）与最终
+/// 容器（`pack_container` 的 `out`），于是实测 `--symbols 1 --count 2`
+/// 加 500 MiB 输入给出**合法**容器 1,048,576,051 字节、峰值 4009.2 MiB。
+///
+/// 三个量都是 Int64：`count`/`symbol_len` 先被 `container_body_bytes`
+/// 约束到非负 Int32 域，乘积 ≤ `(2^31-1)×(2^31+3)`，加 `payload`
+/// （≤ `2^31-1`）仍远小于 Int64 上限，不会先回绕再检查。
+pub fn encode_peak_bytes(
+  payload_len : Int64,
+  count : Int64,
+  symbol_len : Int64,
+) -> Int64 raise LtError {
+  check_nonnegative_int32("payload_len", payload_len, 0L)
+  payload_len + container_file_bytes(count, symbol_len)
+}
+
+///|
+/// `encode` 的峰值闸门：判据是 `encode_peak_bytes`，上限与容器同一个
+/// （1 GiB）。**必须在** `SourceBlock::from_bytes` / `Encoder::symbols` /
+/// `pack_container` 分配之前调用 —— 拒绝的价值就是一次都不分配。
+///
+/// LT30 之前 encode 只量 `43 + count × (4 + symbol_len)`，于是 `--count 0`
+/// 让这条轴恒等于 43：1.1 GiB 输入照样放行（实测峰值 2219.5 MiB、写出一个
+/// 永远读不回的 43 字节头）；`--symbols 1 --count 2` 加 500 MiB 输入则给出
+/// 「合法容器」但峰值 4009.2 MiB。峰值轴把它们都拦在同一条判据上。
+pub fn check_encode_budget(
+  payload_len : Int64,
+  count : Int64,
+  symbol_len : Int64,
+) -> Unit raise LtError {
+  let peak = encode_peak_bytes(payload_len, count, symbol_len)
+  if peak > MAX_CONTAINER_BYTES {
+    raise LtError::ResourceLimitExceeded(
+      "encode_peak_bytes",
+      peak,
+      MAX_CONTAINER_BYTES,
+    )
+  }
+}
+
+///|
 /// 将 `Σ|subset|` 累加到 CSR 槽数。内部始终用 Int64，进入 Int32 长度的
 /// `FixedArray` 前验证可表示域，避免 Int32 回绕成负容量。
 pub fn checked_subset_slots(

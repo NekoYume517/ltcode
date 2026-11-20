@@ -696,6 +696,33 @@ pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String {
 }
 
 ///|
+/// `encode` 的**峰值工作集**守卫（LT30，2026-11-21 审计）。
+///
+/// 判据不是容器字节，而是同一次调用里同时活着的三块：
+/// `payload + 43 + count × (4 + symbol_len)`（全 Int64）。理由见
+/// `@lib.encode_peak_bytes`；这里只负责把它变成一句人话。
+///
+/// 与其余 guard 同形状：空串 = 放行。
+pub fn encode_peak_bound_msg(
+  payload_len : Int32,
+  count : Int32,
+  symbol_len : Int32,
+) -> String {
+  let peak = @lib.encode_peak_bytes(
+    payload_len.to_int64(),
+    count.to_int64(),
+    symbol_len.to_int64(),
+  ) catch {
+    _ => LT_MAX_CONTAINER_BYTES + 1L
+  }
+  if peak > LT_MAX_CONTAINER_BYTES {
+    "--payload \{payload_len} with --count \{count} and symbol_len=\{symbol_len} needs \{peak} bytes of working set (payload + 43 + count x (4 + symbol_len)), above the limit of \{LT_MAX_CONTAINER_BYTES}; encode a smaller payload, lower --count, or raise --symbols so that each symbol is shorter"
+  } else {
+    ""
+  }
+}
+
+///|
 /// `SourceBlock::from_bytes` 的切块长度 `ceil(len / k)`（至少 1），用于在
 /// **构造源块之前**就能算出容器大小（LT9）。两处必须用同一个式子，否则
 /// 守卫看到的 `symbol_len` 与真正写进头部的那个不是一个数。
@@ -830,10 +857,14 @@ fn cmd_encode(args : Args) -> Unit {
     }
     Some(d) => d
   }
-  // LT9：容器字节数 `count × (4 + symbol_len)`。判据必须在
-  // `SourceBlock::from_bytes` 与 `enc.symbols` **之前** —— 那两个才是分配点，
-  // 拒绝的价值就在于一次都不分配（实测无守卫时 60 s、RSS 5.8 GB、零输出）。
-  let bytes_msg = container_bytes_bound_msg(
+  // LT9 + LT30：预算轴是**峰值工作集** `payload + 43 + count × (4 +
+  // symbol_len)`，不是容器字节。LT9 只量容器，于是 `--count 0` 把这条轴
+  // 钉死在 43 字节（1.1 GiB 输入放行、峰值 2219.5 MiB）；`--symbols 1
+  // --count 2` 配 500 MiB 输入给出「合法容器」但峰值 4009.2 MiB。判据必须
+  // 在 `SourceBlock::from_bytes` 与 `enc.symbols` **之前** —— 那两个才是
+  // 分配点，拒绝的价值就在于一次都不分配（实测无守卫时 60 s、RSS 5.8 GB）。
+  let bytes_msg = encode_peak_bound_msg(
+    data.length(),
     count,
     symbol_len_ceil(data.length(), k),
   )

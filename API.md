@@ -390,6 +390,12 @@ pub fn checked_subset_slots(running : Int64, degree : Int32)
   -> Int64 raise LtError             // 累计值 <= Int32.MAX
 pub fn checked_allocation_length(name : String, value : Int64)
   -> Int32 raise LtError
+
+/// LT30（2026-11-21）：encode 的**峰值工作集**轴，与容器轴共用 1 GiB。
+pub fn encode_peak_bytes(payload_len : Int64, count : Int64, symbol_len : Int64)
+  -> Int64 raise LtError             // payload + 43 + count × (4 + symbol_len)
+pub fn check_encode_budget(payload_len : Int64, count : Int64, symbol_len : Int64)
+  -> Unit raise LtError              // 峰值 <= 1 GiB，在分配前调用
 ```
 
 资源上限按**完整容器文件**计算，不是只算符号区。`pack_container` 在写符号前、
@@ -398,6 +404,20 @@ pub fn checked_allocation_length(name : String, value : Int64)
 CLI 的 `container_size_bytes` 为兼容旧测试仍只返回 body，真正的拒绝文案使用
 `container_file_bytes`。边界测试分别锁定 `file == 1 GiB` 放行、下一个符号
 拒绝，以及 `body == 1 GiB` 不能误判为合法文件。
+
+**容器字节不是峰值（LT30，2026-11-21）**。`encode` 一次调用里同时活着
+payload（输入文件）、每个符号的 body 与最终容器，因此 CLI 的 `encode` 判据
+换成 `encode_peak_bytes`（`payload + 43 + count × (4 + symbol_len)`，全
+Int64），上限仍是同一个 1 GiB。修复前只量容器，`--count 0` 把这条轴钉死在
+43 字节：1.1 GiB 输入照样放行（实测峰值 2219.5 MiB、写出永远读不回的 43 字节
+头）；`--symbols 1 --count 2` 配 500 MiB 输入给出「合法容器 1,048,576,051
+字节」而峰值 4009.2 MiB。修复后这两档都被拒（exit 2），峰值分别降到
+1108.1 / 508.1 MiB（拒绝点仍在 `SourceBlock::from_bytes` /
+`Encoder::symbols` 之前）。**这条轴管不到输入读取本身**：`@fs` 只有
+`read_file_to_bytes`（无 size / partial-read / seek），CLI 必须先把整个
+输入读进内存才拿得到 `payload_len`，所以 `decode`/`encode` 的内存下限是
+「输入文件大小」（实测 `decode` 1.5 GiB 垃圾文件峰值 1544.7 MiB、只报
+bad magic）。
 
 剥皮内部的 `Σ|subset|`、CSR offsets/running 用 Int64 累加；转成
 `FixedArray` 的 Int32 容量前必须经 `checked_subset_slots` /
