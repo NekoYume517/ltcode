@@ -659,7 +659,12 @@ pub const LT_MAX_SYMBOL_LEN  : Int32 = 1 << 20
 /// LT6/LT7：单点 `trials × max(K, received)` 的工作预算上限
 pub const LT_MAX_WORK        : Int64 = 2_000_000
 /// LT8（2026-11-17）：字节轴。每个符号操作实际处理 symbol_len 字节
-pub const LT_MAX_WORK_BYTES  : Int64 = 2_000_000_000
+/// LT32（2026-11-21）：再乘上平均度上界 —— peel 每个收到符号要过 avg_degree
+/// 个子集，6e9 是**真实**字节（实测 ≈157 MB/s ⇒ 38 s）
+pub const LT_MAX_WORK_BYTES  : Int64 = 6_000_000_000
+/// LT32：`ceil(ln K) + 6`，钳到 [7, 64]；实测 oh=2.0 下 K=100/1000/10000
+/// 的平均度是 6.82 / 8.92 / 14.45
+pub fn degree_factor_bound(k : Int32) -> Int32
 /// LT9/LT27：encode 的完整容器文件上限（43 + count x (4 + symbol_len)）
 pub const LT_MAX_CONTAINER_BYTES : Int64 = 1_073_741_824
 /// LT10（2026-11-17）：curve 的点数上限与整条命令的总预算
@@ -702,6 +707,23 @@ trial 都先执行 `random_sources(K)`，并构造编解码两侧的 O(K) 分布
 100/1000/5000 trials 为 209/610/2876ms，按最后一点外推上限组合约 1.6 小时。
 每轮取 `max(K, received)` 后，overhead≥1 的既有预算值完全不变，而 0/小数
 received 不再绕过固定成本；上界±1 与 README/DEMO 的全部度量锚点均有回归。
+
+LT32（2026-11-21 审计）补齐字节轴漏掉的**平均度**：`peel` 里每个收到的符号
+要过 `avg_degree` 个子集（`acc` 的分配与每次 XOR 消去都是 `symbol_len`
+字节），所以字节轴必须是 `trials × max(K, received) × symbol_len ×
+degree_factor_bound(K)`。实测 `stats.subset_slots / received`（oh=2.0,
+c=0.1, δ=0.5）为 K=100 → 6.82、K=1000 → 8.92、K=10000 → 14.45，旧判据
+因此低估约 9 倍，下面两条被放行：
+
+```
+simulate --symbols 1000 --overhead 2.0 --trials 1000 --symbol-len 800   91.0 s
+simulate --symbols 1000 --overhead 1.2 --trials 1000 --symbol-len 800   48.5 s
+```
+
+补齐后**不改时间口径**：上限从 2e9 重定为 6e9 **真实**字节（实测吞吐
+≈157 MB/s ⇒ 38 s，仍是原来的「40 s 量级」）。默认 `symbol-len=4` 的全部
+文档命令仍在上限的 1% 以内（DEMO 的 9 点 × 500 曲线合计 2.4e8），
+`--symbol-len 1048576 --trials 4`（实测 2.9 s/trial）放行、`trials=5` 拒。
 
 上限 `2e6` 的依据（release native 实测，单符号成本随 K 超线性：
 K=1000 → 6.1 µs、K=10000 → 19.9 µs、K=100000 → 215 µs、K=1e6 →

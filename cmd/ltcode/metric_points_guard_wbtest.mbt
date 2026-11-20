@@ -53,21 +53,22 @@ test "LT10: a long curve is bounded by the per-command total budget" {
 }
 
 ///|
-/// 字节轴的总量同样要守：单点 1.006e9 字节合法（K=100、oh=1.2、
-/// symbol_len=1048576、trials=8），但 20 个这样的点合计 2.01e10 就已经是
-/// 单点上限的 10 倍，必须被**总量**拦下；19 点（1.91e10）放行 —— 边界精确。
+/// 字节轴的总量同样要守（LT32 起单点/总量都含平均度上界）：K=100、
+/// oh=1.2、`symbol_len=1048576`、trials=4 的单点 = 4 × 120 × 1048576 × 11
+/// = 5.53e9 真实字节（<= 单点 6e9）；3 个这样的点 = 1.66e10 仍在总量 2e10 内，
+/// 4 个点 = 2.21e10 就必须被**总量**拦下 —— 边界精确。
 test "LT10: the total budget also covers the byte axis" {
-  let p19 : Array[Double] = []
-  for i = 0; i < 19; i = i + 1 {
-    p19.push(1.2)
+  let p3 : Array[Double] = []
+  for i = 0; i < 3; i = i + 1 {
+    p3.push(1.2)
   }
-  let p20 : Array[Double] = []
-  for i = 0; i < 20; i = i + 1 {
-    p20.push(1.2)
+  let p4 : Array[Double] = []
+  for i = 0; i < 4; i = i + 1 {
+    p4.push(1.2)
   }
-  inspect(check_metric_magnitudes(100, [1.2], 8, 1048576), content="")
-  inspect(check_metric_magnitudes(100, p19, 8, 1048576), content="")
-  let msg = check_metric_magnitudes(100, p20, 8, 1048576)
+  inspect(check_metric_magnitudes(100, [1.2], 4, 1048576), content="")
+  inspect(check_metric_magnitudes(100, p3, 4, 1048576), content="")
+  let msg = check_metric_magnitudes(100, p4, 4, 1048576)
   assert_true(!msg.is_empty())
   assert_true(msg.contains("byte"))
 }

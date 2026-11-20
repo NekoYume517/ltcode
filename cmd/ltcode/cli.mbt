@@ -214,7 +214,54 @@ pub const LT_MAX_WORK : Int64 = 2_000_000L
 /// 单位与 `LT_MAX_WORK` **不同**（字节 vs 符号操作），所以是两条独立的轴：
 /// 把字节乘进符号轴再重新校准会让 `--symbol-len 1048576 --trials 1`
 /// （实测 2.9 s，完全合理）也被判死 —— 那正是「顺手拦掉合法值」。
-pub const LT_MAX_WORK_BYTES : Int64 = 2_000_000_000L
+///
+/// **LT32（2026-11-21 审计）：这条轴原来漏了平均度。** 每个收到的符号在
+/// `peel` 里要过 `avg_degree` 个子集（`acc` 的分配 + 每次 XOR 消去都是
+/// `symbol_len` 字节），所以「字节级操作」必须写成
+/// `trials × max(K, received) × symbol_len × degree`。实测
+/// `stats.subset_slots / received`（oh=2.0、c=0.1、δ=0.5）：
+/// K=100 → 6.82、K=1000 → 8.92、K=10000 → 14.45。少了这一维，
+/// 判据系统性低估 ~9 倍，于是下面两条实测命令全部放行：
+///
+/// ```text
+/// simulate --symbols 1000 --overhead 2.0 --trials 1000 --symbol-len 800  91.0 s
+/// simulate --symbols 1000 --overhead 1.2 --trials 1000 --symbol-len 800  48.5 s
+/// ```
+///
+/// 补齐后**不改时间口径**：把上限从 2e9 重定为 `6e9` **真实**字节
+/// （实测吞吐 ≈ 157 MB/s ⇒ 6e9 ≈ 38 s，仍是原来那个「40 s 量级」），
+/// 于是 `symbol-len=1048576 --trials 1`（1.4e9 真实字节，实测 2.9 s）
+/// 继续放行，而上面那两条被拒。默认 `symbol-len=4` 的文档命令仍然只占
+/// 上限的 1%（DEMO 的 `curve` 9 点 × 500 合计 2.4e8）。
+pub const LT_MAX_WORK_BYTES : Int64 = 6_000_000_000L
+
+///|
+/// 平均度的**上界**（`ceil(ln K) + 6`，钳到 `[7, 64]`）。
+///
+/// 依据：鲁棒孤波的期望度是 `ln K + O(1)`；本实现 `oh=2.0` 下实测
+/// K=100 → 6.82、K=1000 → 8.92、K=10000 → 14.45，`+6` 对三者都是上界
+/// （13 / 15 / 15.2 的整数上界分别是 13 / 15 / 15；K=1e4 那一格 15.2 取
+/// 15 略紧，故改用 `ceil(ln K) + 6` 后对 14.45 仍留 0.55 余量）。
+///
+/// 用整数倍增算 `ceil(ln K)`：`e^k` 与 `2^i` 的幂都很小，`K ≤ 2^20` 时
+/// 最多 15 次迭代，不需要 `@math`（CLI 侧没有引入它）。
+pub fn degree_factor_bound(k : Int32) -> Int32 {
+  let target = k.to_double()
+  let mut pow = 1.0
+  let mut n = 0
+  while pow < target && n < 64 {
+    pow = pow * 2.718281828459045
+    n = n + 1
+  }
+  let factor = n + 6
+  if factor < 7 {
+    7
+  } else if factor > 64 {
+    64
+  } else {
+    factor
+  }
+}
 
 ///|
 /// 单点工作预算守卫（LT6 / LT7 / LT8，见 `LT_MAX_WORK` 与
@@ -272,9 +319,12 @@ pub fn guard_work_scaled(
   if work > LT_MAX_WORK {
     return "--overhead \{overhead} at K=\{k} with \{trials} trials\{dist_note(dist_factor)} needs \{work} source-setup/symbol operations, above the limit of \{LT_MAX_WORK}; lower --trials or measure at a smaller K"
   }
-  let bytes = work * symbol_len.to_int64()
+  // LT32：字节轴乘上平均度上界 —— `peel` 里每个收到的符号要过
+  // `avg_degree` 个子集，每次都是一份 `symbol_len` 字节的 XOR。
+  let degree = degree_factor_bound(k).to_int64()
+  let bytes = work * symbol_len.to_int64() * degree
   if bytes > LT_MAX_WORK_BYTES {
-    "--overhead \{overhead} at K=\{k} with \{trials} trials\{dist_note(dist_factor)} and --symbol-len \{symbol_len} needs \{bytes} byte-level symbol operations (\{work} ops x \{symbol_len} bytes), above the byte limit of \{LT_MAX_WORK_BYTES}; lower --trials, lower --symbol-len or measure at a smaller K"
+    "--overhead \{overhead} at K=\{k} with \{trials} trials\{dist_note(dist_factor)} and --symbol-len \{symbol_len} needs \{bytes} byte-level symbol operations (\{work} ops x \{symbol_len} bytes x average degree bound \{degree}), above the byte limit of \{LT_MAX_WORK_BYTES}; lower --trials, lower --symbol-len or measure at a smaller K"
   } else {
     ""
   }
@@ -469,7 +519,10 @@ fn check_metric_magnitudes_scaled(
       per_trial.to_int64() *
       dist_factor.to_int64()
     total_work = total_work + point_work
-    total_bytes = total_bytes + point_work * symbol_len.to_int64()
+    // LT32：与 `guard_work_scaled` 同一条公式（含平均度上界），否则单点被
+    // 拒、总量却以为很便宜，文档里的大曲线会被误判。
+    total_bytes = total_bytes +
+      point_work * symbol_len.to_int64() * degree_factor_bound(k).to_int64()
   }
   guard_work_total(overheads.length(), trials, total_work, total_bytes)
 }

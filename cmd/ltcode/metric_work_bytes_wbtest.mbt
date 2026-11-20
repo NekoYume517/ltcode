@@ -46,10 +46,12 @@ test "LT8: the same trials at the default symbol length still pass" {
 /// 必须放行。守卫量是**乘积**，不是任何单个因子。
 test "LT8: max symbol-len at one trial is not over-blocked" {
   inspect(check_metric_magnitudes(100, [1.2], 1, 1048576), content="")
-  // 边界：K=100/oh=1.2 → per_trial=120；120 × 1048576 = 125829120 B 每 trial。
-  // 15 trials = 1887436800 B <= 2e9 放行，16 trials = 2013265920 B 拒。
-  inspect(check_metric_magnitudes(100, [1.2], 15, 1048576), content="")
-  assert_true(!check_metric_magnitudes(100, [1.2], 16, 1048576).is_empty())
+  // 边界（LT32 起含平均度上界）：K=100 → degree 上界 11，per_trial=120 →
+  // 每 trial 120 × 1048576 × 11 = 1.384e9 真实字节。
+  // 4 trials = 5.53e9 <= 6e9 放行（实测 ≈ 11.6 s，与 2.9 s/trial 相符），
+  // 5 trials = 6.92e9 拒。
+  inspect(check_metric_magnitudes(100, [1.2], 4, 1048576), content="")
+  assert_true(!check_metric_magnitudes(100, [1.2], 5, 1048576).is_empty())
 }
 
 ///|
