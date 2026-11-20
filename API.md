@@ -321,21 +321,28 @@ pub fn header_len() -> Int                     // 43
 pub fn quantize_param(x : Double) -> Int        // round(x*100) 钳到 [0,255]
 pub fn dequantize_param(q : Int) -> Double
 
-/// `quantize_param` 的像是 [0,255]，而 unpack 的头部域是 `c_q ∈ [1,255]`、
-/// `delta_q ∈ [1,100]` —— 越出像内域的参数（c<0.005、delta<0.005、
-/// delta>1）写出的头会被 unpack 明确拒绝（InvalidHeaderField，不是静默
-/// 坏数据）。**这张网格的精确形状（LT11/LT12/LT13，2026-11-17 审计）**：
+/// 量化网格与**两条入口的同一个闸门**：`quantize_param` 的像是 [0,255]，
+/// 而 unpack 的头部域是 `c_q ∈ [1,255]`、`delta_q ∈ [1,100]`。LT29
+/// （2026-11-21 审计）把「写参数的入口」收敛成一份 `quantized_pair`：
+/// `Encoder::new`、`decode_with_stats` 与 `pack_container` 对任意
+/// `(c, delta)` 给出**同一个**接受/拒绝结论 —— 非有限 →
+/// `DistributionNotNormalized`；量化后落不进 `[1,255]`/`[1,100]` →
+/// `ParamOutOfImage`（`c < 0.005`、`delta < 0.005`、`delta > 1`）；
+/// 进像则钳位成网格值。修复前 `pack_container` 只过非有限闸门，越像参数
+/// 会被写成「读不回的头」（`c_q = 0` / `delta_q = 101`），而同一个参数交给
+/// `Encoder::new` 会当场拒绝 —— 两条入口结论相反。跨入口矩阵由
+/// `src/pack_param_domain_test.mbt` 逐格锁定（每格断言两入口同结论 +
+/// pack 成功的容器必须 unpack 得回来）。
+///
+/// **这张网格的精确形状（LT11/LT12/LT13，2026-11-17 审计）**：
 /// 判据是 `round(x*100)`，进位规则 half-away-from-zero，作用在 **binary64
 /// 的乘积**上而不是十进制中点上 —— `0.005*100` 恰好是 `0.5`（进到 1）、
 /// `0.015*100` 恰好是 `1.5`（进到 2）、`1.005*100` 是 `100.49999999999999`
 /// （落到 100），`2.555*100` 是 `255.50000000000003`（进到 256）。因此：
 /// `Encoder::try_new` 的严格域是 `c ∈ [0.005, 2.555)`、
-/// `delta ∈ [0.005, 1.005)`（越界 `ParamOutOfImage`）；`Encoder::new`
-/// 把越界值**钳位**到网格（`c=1000` → 2.55）后才判，落不进头部域时报
-/// `ParamOutOfImage`。旧版这里写「可表示域：c ∈ [0.005, 2.555]」是错的：
-/// 上界既不是闭区间、也不是拒绝边界（大于它的有限值被静默钳位）。
-/// 走 Encoder 的正常路径在入口就归一/拒绝（§5），直接调 pack_container
-/// 的调用方由 unpack 把关（2026-11-15 审计锁定，见 quantize_image_test.mbt）。
+/// `delta ∈ [0.005, 1.005)`（越界 `ParamOutOfImage`）；`Encoder::new` 与
+/// `pack_container` 把越界值**钳位**到网格（`c=1000` → 2.55）后才判，
+/// 落不进头部域时报 `ParamOutOfImage`。
 
 /// FNV-1a 64。抓意外损坏，不抗主动构造 —— 能力边界见 docs/implementation.md §5b。
 pub fn payload_hash(data : Bytes) -> UInt64
@@ -355,9 +362,11 @@ pub fn payload_hash(data : Bytes) -> UInt64
 ///   `payload_len >= 1` 是同一个判据；LT23，2026-11-17-b）；
 /// - `payload.length() > K × symbol_len` → `InvalidHeaderField`；
 /// - 符号体长度 ≠ `symbol_len` → `SymbolLengthMismatch`；
-/// - `c` / `delta` 非有限（`nan` / `inf`）→ `DistributionNotNormalized`，
-///   与 `Encoder::new` / `decode_with_stats` **同一份判断**
-///   （LT24，2026-11-17-b）。
+/// - `c` / `delta` 非有限（`nan` / `inf`）→ `DistributionNotNormalized`；
+///   量化后落不进头部域（`c_q < 1`、`delta_q < 1`、`delta_q > 100`）→
+///   `ParamOutOfImage`。与 `Encoder::new` / `decode_with_stats` 是**同一个
+///   函数**（`quantized_pair`），两条入口的接受/拒绝矩阵逐格一致
+///   （LT24 修非有限；LT29，2026-11-21 把像域一起收敛）。
 pub fn pack_container(block : SourceBlock, seed : UInt64, payload : Bytes,
   c : Double, delta : Double, symbols : Array[Symbol]) -> Bytes
 

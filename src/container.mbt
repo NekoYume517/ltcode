@@ -403,16 +403,24 @@ pub fn pack_container(
       raise LtError::SymbolLengthMismatch(block.symbol_len, s.data.length())
     }
   }
-  // ── 参数闸门（LT24，2026-11-17-b 审计）────
+  // ── 参数闸门（LT24 + LT29，2026-11-17-b / 2026-11-21 审计）────
   //
-  // 与 `Encoder::new` / `Encoder::try_new` / `decode_with_stats` 用**同一份**
-  // 判断（`non_finite_param`）。修复前这里是唯一漏掉它的入口：
-  // `c = inf` 被写成 `c_q = 255`（在 unpack 的合法域内 → 读得回来，但
-  // `decode` 用的是 2.55，参数被静默换掉）；`c = nan` / `delta = inf`
-  // 写出 `c_q = 0` / `delta_q = 255`（读不回）。
-  match non_finite_param(c, delta) {
+  // LT24 修的是**非有限**值（`c = inf` 被写成 `c_q = 255`、`c = nan` 写出
+  // `c_q = 0`）。但有限而越像的参数仍然漏过去：`c = 0.004` → `c_q = 0`、
+  // `delta = 0.004` → `delta_q = 0`、`delta = 1.01` → `delta_q = 101`。
+  // 这些头被 `unpack_container` 当场拒绝，而同一个 `(c, delta)` 交给
+  // `Encoder::new` 会立刻 `ParamOutOfImage` —— 同一个参数在两条写入口上
+  // 得到**相反**结论，且 pack 那一侧产出「写得出、读不回」的文件
+  // （LT20/LT23/LT24 同族）。
+  //
+  // LT29 的修法：pack 走**编码入口同一份**闸门 `quantized_pair`
+  // （非有限 → `DistributionNotNormalized`；量化后落不进 `[1, 255]`/
+  // `[1, 100]` → `ParamOutOfImage`；进像则钳位成网格值）。因此
+  // `Encoder::new` 接受的 `(c, delta)` 集合与这里是**同一个集合**，
+  // 写出的 `c_q`/`delta_q` 也必然是 `Encoder::new` 实际拿去建分布的量化值。
+  let (qc, qdelta) = match quantized_pair(c, delta) {
     Err(e) => raise e
-    Ok(_) => ()
+    Ok(pair) => pair
   }
   // LT27：完整文件（含 43 字节头）先过读写共用预算，再写任何符号。
   check_container_budget(
@@ -424,8 +432,10 @@ pub fn pack_container(
     out.push(m)
   }
   out.push(container_version.to_byte())
-  out.push(quantize_param(c).to_byte())
-  out.push(quantize_param(delta).to_byte())
+  // 写的是**闸门归一后**的网格值（不是原始入参）：对网格点逐位不变，
+  // 对越像但钳位进像的输入（`c = 1000`）与 `Encoder::new` 用的是同一个 2.55。
+  out.push(quantize_param(qc).to_byte())
+  out.push(quantize_param(qdelta).to_byte())
   put_u32(out, block.k)
   put_u64(out, seed)
   put_u32(out, block.symbol_len)

@@ -29,16 +29,19 @@
 ///   数学层不受影响：`robust_distribution(k, 0.004, 0.5)` 仍可独立构造，
 ///   只有**进入容器系统**的入口（Encoder/decode）归一。
 ///
-/// ## 为什么 c_q=0 的像缝隙不单独做行为修复
+/// ## c_q=0 的像缝隙：2026-11-21（LT29）已收敛，不再靠 unpack 事后把关
 ///
 /// `quantize_param` 的像是 `[0, 255]`，而 unpack 要求 `c_q ∈ [1, 255]`、
-/// `delta_q ∈ [1, 100]`。归一修复后，**走 Encoder 的正常路径**不可能再
-/// 产出越像容器（入口已拒）；只剩「绕过 Encoder 直接调 pack_container」
-/// 一种形态，后果是 unpack **明确报** `InvalidHeaderField`（不是静默
-/// 坏数据）。pack 侧 clamp 会改写参数造成子集失配（更糟）、收紧库的
-/// c 下界会制造新的「合法输入被拒」（LT4 刚消灭的那族）、pack 加 raise
-/// 属破坏性签名变更 —— 都不做，用测试锁定 unpack 把关的行为 + 文档写明
-/// pack 的可表示域。
+/// `delta_q ∈ [1, 100]`。上一轮（LT24）只把**非有限**闸门收敛到
+/// `pack_container`，有限而越像的参数仍能绕过 `Encoder` 直接写出读不回的
+/// 头，当时的结论是「用测试锁定 unpack 把关的行为 + 文档写明 pack 的可
+/// 表示域」。
+///
+/// LT29 把这个缝隙关掉了：`pack_container` 改走编码入口**同一份**
+/// `quantized_pair`（非有限 + 量化后必须在 `[1, 255]`/`[1, 100]` 内，
+/// 进像则钳位）。于是「越像参数」在两条入口上是同一个 `ParamOutOfImage`，
+/// 不再存在「写得出来但读不回」的形态；跨入口矩阵由
+/// `pack_param_domain_test.mbt` 逐格锁定。
 
 ///|
 /// 核心红测试：非网格 c 的容器往返。修复前 decode 端拿 0.01 去解
@@ -197,9 +200,10 @@ test "LT5: grid parameters are untouched by quantization round trip" {
 }
 
 ///|
-/// pack 直调（绕过 Encoder）写出越像头 → unpack 明确报头部字段错误，
-/// 不是静默坏数据。锁定 unpack 把关的行为。
-test "LT5: pack with unrepresentable c (0.004) is rejected with a header error" {
+/// LT29（2026-11-21）：pack 直调（绕过 Encoder）给越像 `c` 时**当场拒绝**，
+/// 与 `Encoder::new` 同一个 `ParamOutOfImage`、同一个字段名 —— 写不出
+/// 读不回的头。
+test "LT29: pack with unrepresentable c (0.004) is rejected at the encoder gate" {
   let block = match SourceBlock::from_bytes(Bytes::make(4, b'\x05'), 1) {
     Ok(b) => b
     Err(e) => abort("from_bytes: \{error_text(e)}")
@@ -209,26 +213,34 @@ test "LT5: pack with unrepresentable c (0.004) is rejected with a header error" 
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_ok(block, 7UL, block.sources[0], 0.004, 0.5, symbols)
-  assert_true(packed[5].to_int() == 0) // c_q = 0
-  let outcome = try {
-    let _ = unpack_container(packed)
-    "unpacked"
+  let pack_outcome = try {
+    let _ = @src.pack_container(
+      block,
+      7UL,
+      block.sources[0],
+      0.004,
+      0.5,
+      symbols,
+    )
+    "accepted"
   } catch {
-    InvalidHeaderField(name, v, low, high) =>
-      if name == "c_q" && v == 0UL && low == 1UL && high == 255UL {
-        "rejected-as-header-error"
-      } else {
-        "wrong-field: \{name}=\{v} in [\{low},\{high}]"
-      }
+    @src.ParamOutOfImage(field, v, low, high) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
     e => "other: \{error_text(e)}"
   }
-  inspect(outcome, content="rejected-as-header-error")
+  let enc_outcome = match Encoder::new(block, 7UL, 0.004, 0.5) {
+    Ok(_) => "accepted"
+    Err(@src.ParamOutOfImage(field, v, low, high)) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
+    Err(e) => "other: \{error_text(e)}"
+  }
+  inspect(pack_outcome, content="@src.ParamOutOfImage(c, 0.004, 0.005, 2.555)")
+  assert_eq(pack_outcome, enc_outcome)
 }
 
 ///|
-/// delta=0.004 直调 pack → delta_q=0 → unpack 明确拒绝。
-test "LT5: pack with unrepresentable delta (0.004) is rejected with a header error" {
+/// LT29：`delta = 0.004` 同理 —— 两条入口同一个字段名、同一组边界。
+test "LT29: pack with unrepresentable delta (0.004) is rejected at the encoder gate" {
   let block = match SourceBlock::from_bytes(Bytes::make(4, b'\x06'), 1) {
     Ok(b) => b
     Err(e) => abort("from_bytes: \{error_text(e)}")
@@ -238,27 +250,38 @@ test "LT5: pack with unrepresentable delta (0.004) is rejected with a header err
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_ok(block, 8UL, block.sources[0], 0.1, 0.004, symbols)
-  assert_true(packed[6].to_int() == 0) // delta_q = 0
-  let outcome = try {
-    let _ = unpack_container(packed)
-    "unpacked"
+  let pack_outcome = try {
+    let _ = @src.pack_container(
+      block,
+      8UL,
+      block.sources[0],
+      0.1,
+      0.004,
+      symbols,
+    )
+    "accepted"
   } catch {
-    InvalidHeaderField(name, v, low, high) =>
-      if name == "delta_q" && v == 0UL && low == 1UL && high == 100UL {
-        "rejected-as-header-error"
-      } else {
-        "wrong-field: \{name}=\{v} in [\{low},\{high}]"
-      }
+    @src.ParamOutOfImage(field, v, low, high) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
     e => "other: \{error_text(e)}"
   }
-  inspect(outcome, content="rejected-as-header-error")
+  let enc_outcome = match Encoder::new(block, 8UL, 0.1, 0.004) {
+    Ok(_) => "accepted"
+    Err(@src.ParamOutOfImage(field, v, low, high)) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
+    Err(e) => "other: \{error_text(e)}"
+  }
+  inspect(
+    pack_outcome,
+    content="@src.ParamOutOfImage(delta, 0.004, 0.005, 1.005)",
+  )
+  assert_eq(pack_outcome, enc_outcome)
 }
 
 ///|
-/// pack 直调 delta=1.01 → delta_q=101 → unpack 明确拒绝
-/// （库的正路是 Encoder::new 先拒 delta>1）。
-test "LT5: pack with delta above 1 writes delta_q=101 and unpack rejects" {
+/// LT29：`delta = 1.01` 同理（量化后 101 > 100）。库的正路是 `Encoder::new`
+/// 先拒 delta>1，现在 pack 在同一处拒，不再是「写出 101 让 unpack 判死」。
+test "LT29: pack with delta above 1 is rejected at the encoder gate" {
   let block = match SourceBlock::from_bytes(Bytes::make(4, b'\x07'), 1) {
     Ok(b) => b
     Err(e) => abort("from_bytes: \{error_text(e)}")
@@ -268,21 +291,32 @@ test "LT5: pack with delta above 1 writes delta_q=101 and unpack rejects" {
     Err(e) => abort("encoder: \{error_text(e)}")
   }
   let symbols = enc.symbols(0, 2)
-  let packed = pack_ok(block, 9UL, block.sources[0], 0.1, 1.01, symbols)
-  assert_true(packed[6].to_int() == 101)
-  let outcome = try {
-    let _ = unpack_container(packed)
-    "unpacked"
+  let pack_outcome = try {
+    let _ = @src.pack_container(
+      block,
+      9UL,
+      block.sources[0],
+      0.1,
+      1.01,
+      symbols,
+    )
+    "accepted"
   } catch {
-    InvalidHeaderField(name, v, low, high) =>
-      if name == "delta_q" && v == 101UL && low == 1UL && high == 100UL {
-        "rejected-as-header-error"
-      } else {
-        "wrong-field: \{name}=\{v} in [\{low},\{high}]"
-      }
+    @src.ParamOutOfImage(field, v, low, high) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
     e => "other: \{error_text(e)}"
   }
-  inspect(outcome, content="rejected-as-header-error")
+  let enc_outcome = match Encoder::new(block, 9UL, 0.1, 1.01) {
+    Ok(_) => "accepted"
+    Err(@src.ParamOutOfImage(field, v, low, high)) =>
+      "@src.ParamOutOfImage(\{field}, \{v}, \{low}, \{high})"
+    Err(e) => "other: \{error_text(e)}"
+  }
+  inspect(
+    pack_outcome,
+    content="@src.ParamOutOfImage(delta, 1.01, 0.005, 1.005)",
+  )
+  assert_eq(pack_outcome, enc_outcome)
 }
 
 ///|
