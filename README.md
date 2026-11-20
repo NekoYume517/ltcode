@@ -417,6 +417,15 @@ $ echo $?
 `K × overhead`（收到的符号数），K 本身**没有**量级界，所以
 「极小 overhead + 巨大 K」会绕开它，那才是这条域上界真正要紧的地方。
 
+## 预算轴（2026-11-21 补的两条）
+
+- `encode` / `pack_container`：**峰值工作集** `payload + 43 + count × (4 + symbol_len) <= 1 GiB`
+  —— 容器字节不是峰值（LT30；`--count 0` 曾是绕过口，实测 1.1 GiB 输入、
+  `--symbols 1 --count 2` 配 500 MiB 输入两档从 2219.5 / 4009.2 MiB 峰值改为 exit 2）。
+- 度量（`simulate` / `curve` / `distcmp`）：**真实字节** `trials × max(K, received) ×
+  symbol_len × degree_factor_bound(K) <= 6e9`，`degree_factor_bound(K) = ceil(ln K) + 6`
+  —— 少乘平均度会低估约 9 倍（LT32；实测 91.0 s / 48.5 s 两档被拒，边界 288 trials = 27.9 s 放行）。
+
 ## 不做什么（明确的设计选择，不是缺陷）
 
 ### 没有 inactivation + 高斯消元
@@ -466,13 +475,13 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 762 warnings, 0 errors
-moon test             # 236 tests, all pass
+moon check            # 785 warnings, 0 errors
+moon test             # 254 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（236 条，按 `^test "` 计数）：
+测试分布（254 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -497,6 +506,7 @@ moon build --target wasm
 | `verified_test.mbt` | 3 | 完好容器通过校验、篡改必 raise `CorruptionDetected` |
 | `symbol_test.mbt` | 3 | `reassemble` 逐字节还原、按 `payload_len` 截零、空输入不 panic |
 | `inconsistent_test.mbt` | 2 | `DecodeStats.inconsistent` 结构性恒 0 的护栏 |
+| `parse_args_value_test.mbt` | 3 | `--key` 缺值时不吞下一个 `--flag`、末尾缺值读作缺失（LT31，2026-11-21 审计） |
 | `cli_test.mbt` | 14 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
 | `unknown_flag_test.mbt` | 7 | 未知 `--flag` 与位置参数报用法错误 |
 | `default_count_test.mbt` | 5 | 默认 `--count` 是 `ceil(1.5K)+1`（含奇数 K 的分水岭）、触顶时说明「默认值超限」 |
@@ -506,6 +516,9 @@ moon build --target wasm
 | `solvability_note_wbtest.mbt` | 6 | `encode` 末尾可解性验算：解不出必说、解得出逐字不变、闸门 `count <= 4096`、`--count 0` 优先（2026-11-12 followup） |
 | `metric_work_bytes_wbtest.mbt` | 4 | 工作预算的**字节轴**：`--symbol-len` 组合被拦、默认 sl 不误伤、上界±1、全部文档命令逐条代进（2026-11-17 审计） |
 | `container_bytes_bound_test.mbt` | 4 | `encode` 的完整容器文件上限 1 GiB（含 43 字节头）、精确边界、零符号容器与文档 encode 命令不误伤（LT27 复核） |
+| `metric_degree_axis_wbtest.mbt` | 4 | 字节轴补上平均度上界（91.0 s / 48.5 s 两档被拒）、默认 sl 与文档度量命令不误伤、6e9 边界 288/289（LT32，2026-11-21 审计） |
+| `encode_peak_budget_test.mbt` | 5 | `encode_peak_bytes` = payload + 43 + count×(4+sl)、两条实测爆点被拒、边界精确、负值/超 Int32 先拒（LT30，2026-11-21 审计） |
+| `encode_peak_bound_test.mbt` | 4 | CLI 侧同一条轴：`--count 0` 不再绕过、`--symbols 1 --count 2` 与 500 MiB 被拒、文档 encode 命令不误伤、边界双向（LT30，2026-11-21 审计） |
 | `metric_points_guard_wbtest.mbt` | 3 | `curve --overheads` 点数 ≤ 64 与整条命令的总预算（符号轴 + 字节轴）（2026-11-17 审计） |
 | `metric_distcmp_factor_wbtest.mbt` | 2 | `distcmp` 的预算按实测 1.94× 保守乘 2，simulate/curve 边界不变（2026-11-17 审计） |
 | `param_image_test.mbt` | 4 | 参数越界报 `ParamOutOfImage`（不再借分布文案）、`try_new` 与 `new` 的钳位/拒绝矩阵、逐符号一致性（2026-11-17 审计） |
@@ -517,6 +530,7 @@ moon build --target wasm
 | `pack_param_finite_test.mbt` | 3 | `pack_container` 的非有限 `c`/`delta` 闸门：四个写读参数的入口同源、`c=1000` 的钳位契约不误伤（2026-11-17-b 审计） |
 | `pack_empty_payload_test.mbt` | 2 | `pack_container` 不再写出 `payload_len=0`（LT21 的编码侧镜像）：空载荷报 `EmptySource`、1 字节载荷照旧打包读回（2026-11-17-b 审计） |
 | `pack_source_block_guard_test.mbt` | 3 | 手工 `SourceBlock` 的 K / symbol_len 域在写侧复核，oversized K 不再写出读不回的容器（LT25，2026-11-19 审计） |
+| `pack_param_domain_test.mbt` | 2 | `pack_container` 与 `Encoder::new` 在 12 个 (c,delta) 上同结论、pack 成功的容器必须 unpack 得回来并可解（LT29，2026-11-21 审计） |
 | `container_payload_len_decode_test.mbt` | 2 | `decode_verified` 拒绝零/超长 `payload_len`，不再用裁切后的哈希制造 `Complete` 假成功（LT26，2026-11-19 审计） |
 | `resource_budget_test.mbt` | 6 | body/file 分离、完整文件 1 GiB 精确边界、负值/超 Int32 标量、`Σ|subset|` 与 decoded_bytes 转换、43 字节小头在读符号前拒绝（LT27，2026-11-20 审计） |
 | `encoder_source_block_test.mbt` | 3 | 手工 `SourceBlock` 少源/多源/源长不齐被 Encoder 拒绝，合法手工块逐字节兼容（LT28，2026-11-20 审计） |

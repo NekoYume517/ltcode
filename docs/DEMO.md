@@ -22,15 +22,18 @@
 > 守卫改用非弃用转换后，警告数回到 **759**，§1 已按最新实测改写。
 > 2026-11-20 LT27/LT28 新增 9 条回归，测试总数 **236**、`moon check`
 > 实测 **762 warnings / 0 errors**；§9 记录了本轮实际重跑的轻量往返与度量锚点。
+> 2026-11-21 LT29/LT30/LT31/LT32 新增 18 条回归，测试总数 **254**、
+> `moon check` 实测 **785 warnings / 0 errors**；§2／§3／§3b／§5／§6 的数字
+> 本轮**逐条重跑过**，与下面粘贴的逐字相同（§9 记录了命令清单）。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (762 warnings, 0 errors)
+# Finished. moon: ran 3 tasks, now up to date (785 warnings, 0 errors)
 
 $ moon test
-Total tests: 236, passed: 236, failed: 0.
+Total tests: 254, passed: 254, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
