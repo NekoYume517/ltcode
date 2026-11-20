@@ -62,9 +62,10 @@ test "cli: parse_args tolerates a trailing flag with no value" {
   let argv = ["ltcode", "decode", "--input", "x.ltc", "--verbose"]
   let args = @ltcode.parse_args(argv)
   assert_eq(args.str("input"), Some("x.ltc"))
-  // 末尾无值：记成空串（调用方按需判断），不 panic
-  assert_eq(args.str("verbose"), Some(""))
-  // 空串作为数值是 Invalid（给了一个不是数的东西），不是 Absent
+  // 末尾无值：LT31（2026-11-21）起与「没给」同一个结论（None），
+  // 不再是空串 —— 空串路径会让调用方去读/写文件并报 exit 3。
+  assert_eq(args.str("verbose"), None)
+  // 空串作为数值仍是 Invalid（给了一个不是数的东西），不是 Absent
   assert_eq(show_int_arg(args, "verbose"), "invalid ")
 }
 

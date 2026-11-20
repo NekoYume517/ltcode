@@ -121,7 +121,13 @@ pub fn parse_args(argv : Array[String]) -> Args {
           order.push(key)
         }
         None => {
-          map[body] = if i + 1 < argv.length() {
+          // LT31（2026-11-21 审计）：下一 token 以 `--` 开头时**不当值消费**。
+          // 修复前无条件消费，于是 `--out --count 5` 把 `--count` 变成文件名、
+          // 把 `5` 变成位置参数 —— 用户看到的位置参数错误指错了对象，而
+          // `--out` 的值成了 `--count`（写文件失败报 "cannot write
+          // '--count'"，退出码 3，像是输入坏了）。缺值就记缺值，下一个 key
+          // 照常解析。
+          map[body] = if i + 1 < argv.length() && !argv[i + 1].has_prefix("--") {
             let v = argv[i + 1]
             i = i + 1
             v
@@ -186,8 +192,17 @@ pub fn unknown_arg_error(args : Args, cmd : String) -> String {
 }
 
 ///|
+/// 字符串参数：**空值等于没给**（LT31，2026-11-21 审计）。
+///
+/// `--out` 写在末尾、或后面紧跟另一个 `--flag` 时，值只能是空串，而空串
+/// 路径永远不合法。修复前 `Some("")` 会让调用方拿空路径去读/写文件并报
+/// 「cannot read ''」（退出码 3，像输入坏了）；现在它与「没给」同一个结论，
+/// 走各自的 `needs --X`（退出码 2）。显式 `--out=` 同理。
 pub fn Args::str(self : Args, key : String) -> String? {
-  self.map.get(key)
+  match self.map.get(key) {
+    None => None
+    Some(v) => if v.is_empty() { None } else { Some(v) }
+  }
 }
 
 ///|
