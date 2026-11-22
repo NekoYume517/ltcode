@@ -475,13 +475,13 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 785 warnings, 0 errors
-moon test             # 254 tests, all pass
+moon check            # 794 warnings, 0 errors
+moon test             # 257 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（254 条，按 `^test "` 计数）：
+测试分布（257 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -506,6 +506,7 @@ moon build --target wasm
 | `verified_test.mbt` | 3 | 完好容器通过校验、篡改必 raise `CorruptionDetected` |
 | `symbol_test.mbt` | 3 | `reassemble` 逐字节还原、按 `payload_len` 截零、空输入不 panic |
 | `inconsistent_test.mbt` | 2 | `DecodeStats.inconsistent` 结构性恒 0 的护栏 |
+| `independent_sweep_test.mbt` | 3 | 130 组 encode/decode 对独立于 `decode_success_rate` 的往返扫描；只收 `symbols(60, 2k)` 的断点续收 + 重复下标（2026-11-23） |
 | `parse_args_value_test.mbt` | 3 | `--key` 缺值时不吞下一个 `--flag`、末尾缺值读作缺失（LT31，2026-11-21 审计） |
 | `cli_test.mbt` | 14 | 参数三态（缺席/合法/非法）、`--seed` 显式 `0x`、负值与溢出拒绝、非有限值拒绝、overhead 严格拒绝、退出码语义判别 |
 | `unknown_flag_test.mbt` | 7 | 未知 `--flag` 与位置参数报用法错误 |

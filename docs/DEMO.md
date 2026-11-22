@@ -25,15 +25,19 @@
 > 2026-11-21 LT29/LT30/LT31/LT32 新增 18 条回归，测试总数 **254**、
 > `moon check` 实测 **785 warnings / 0 errors**；§2／§3／§3b／§5／§6 的数字
 > 本轮**逐条重跑过**，与下面粘贴的逐字相同（§9 记录了命令清单）。
+> 2026-11-23 复测：`independent_sweep_test.mbt` 新增 1 条断点续收回归，
+> 测试总数 **257**、`moon check` 实测 **794 warnings / 0 errors**（新增的
+> 8 条均为该文件沿用的 `test_unqualified_package` 样式级提示）；
+> §1 的输出按本轮实测刷新，其余各节数字不变（编码/解码路径未被触碰）。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (785 warnings, 0 errors)
+# Finished. moon: ran 3 tasks, now up to date (794 warnings, 0 errors)
 
 $ moon test
-Total tests: 254, passed: 254, failed: 0.
+Total tests: 257, passed: 257, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）

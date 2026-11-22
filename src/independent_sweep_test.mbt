@@ -106,3 +106,42 @@ test "ltcode: independent sweep — k-1 symbols never claim completeness" {
   inspect(cases, content="25")
   inspect(wrongly_complete, content="0")
 }
+
+///|
+/// rateless 契约的直接验证：**只收**一段从非零 first_index 开始的连续符号
+/// （模拟"前面的全丢了，补发从第 60 号起"）必须能独立解出；同一批里混入
+/// 重复下标的符号既不能破坏解码，也不能让结果变假。此前 `Encoder::symbols`
+/// 的 first_index 路径只测了「下标正确」，没有端到端解过。
+
+///|
+test "ltcode: resume — decoding only symbols(60, 2k) with duplicates recovers the payload" {
+  let k : Int32 = 50
+  let symbol_len : Int32 = 8
+  let seed : UInt64 = 0xA11CEUL
+  let payload = sweep_payload(0xCAFE0000UL + k.to_uint64(), k * symbol_len)
+  let block = match SourceBlock::from_bytes(payload, k) {
+    Ok(b) => b
+    Err(_) => abort("from_bytes must accept a k*symbol_len payload")
+  }
+  let enc = match Encoder::new(block, seed, 0.05, 0.05) {
+    Ok(e) => e
+    Err(_) => abort("Encoder::new must accept (c=0.05, delta=0.05)")
+  }
+  let batch = enc.symbols(60, k * 2)
+  let received : Array[ReceivedSymbol] = []
+  for sym in batch {
+    received.push(ReceivedSymbol::{ index: sym.index, data: sym.data, })
+  }
+  // 混入重复：把批内第 0、1 个符号再各收一次（同一子集的冗余方程，
+  // 剥皮时应被自然消化，不影响诚实性）。
+  received.push(ReceivedSymbol::{ index: batch[0].index, data: batch[0].data, })
+  received.push(ReceivedSymbol::{ index: batch[1].index, data: batch[1].data, })
+  let r = decode_full(seed, k, symbol_len, received, 0.05, 0.05) catch {
+    _ => abort("decode raised on well-formed symbols")
+  }
+  match r {
+    Complete(sources) =>
+      inspect(reassemble(sources, k * symbol_len) == payload, content="true")
+    Incomplete(_, _) => abort("2x overhead from a fresh offset must decode")
+  }
+}
