@@ -55,12 +55,13 @@ test "LT16: xor_bytes scales exactly with symbol_len" {
 
 ///|
 /// 按 `(seed, K, overhead, symbol_len)` 造一批编码符号（测试夹具）。
+/// LT33 之后 `random_sources` 是 raise 入口，夹具跟着带上错误签名。
 fn random_received(
   seed : UInt64,
   k : Int32,
   overhead : Double,
   symbol_len : Int32,
-) -> Array[ReceivedSymbol] {
+) -> Array[ReceivedSymbol] raise LtError {
   let block = match SourceBlock::new(random_sources(seed, k, symbol_len)) {
     Ok(b) => b
     Err(e) => abort("sources: \{error_text(e)}")

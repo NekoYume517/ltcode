@@ -71,11 +71,20 @@ pub fn received_count(k : Int32, overhead : Double) -> Int32 {
 
 ///|
 /// 由 `seed` 确定性生成 K 个等长源符号。
+///
+/// `k < 1` / `symbol_len < 1` 报 `EmptySource`（LT33，2026-11-23 审计）：
+/// 修复前 `FixedArray::make(symbol_len, …)` 对负长度是 WASM trap，并且
+/// 顺着 `run_trial` / `ideal_success_rate` / `fixed_degree_success_rate`
+/// 把三个度量入口一起拖下水；`SourceBlock::new` 对同样输入报的是
+/// `EmptySource`，生成入口必须先给同一份裁决（在分配之前）。
 pub fn random_sources(
   seed : UInt64,
   k : Int32,
   symbol_len : Int32,
-) -> Array[Bytes] {
+) -> Array[Bytes] raise LtError {
+  if k < 1 || symbol_len < 1 {
+    raise LtError::EmptySource
+  }
   let rng = Ltrng::new(splitmix64(seed ^ 0x51505150UL))
   let out : Array[Bytes] = []
   for i = 0; i < k; i = i + 1 {

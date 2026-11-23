@@ -184,7 +184,17 @@ pub fn Distribution::sample(self : Distribution, rng : Ltrng) -> Int32 {
 /// 由裸 pmf 数组构造（`pmf[d-1]` 是度数 d 的概率）。不校验归一化 ——
 /// 校验请用 `validate_distribution`。这条入口存在是为了让测试能构造
 /// **故意不归一化**的分布，验证校验逻辑真的会拒绝它。
-pub fn distribute_from_array(k : Int32, values : Array[Double]) -> Distribution {
+///
+/// `k < 1` 报 `EmptySource` 而不是让 `FixedArray::make(k + 1, …)` 触发
+/// WASM trap（LT33，2026-11-23 审计）：`decode_with_stats` 对同一个 K 域
+/// 报的就是 `EmptySource`，构造器入口必须给同一份裁决。
+pub fn distribute_from_array(
+  k : Int32,
+  values : Array[Double],
+) -> Distribution raise LtError {
+  if k < 1 {
+    raise LtError::EmptySource
+  }
   let pmf : FixedArray[Double] = FixedArray::make(k + 1, 0.0)
   for i = 0; i < values.length(); i = i + 1 {
     let d = i + 1
@@ -218,7 +228,13 @@ pub fn distribute_from_array(k : Int32, values : Array[Double]) -> Distribution 
 /// `distcmp` 的对外结论逐字未变（K=2..4 仍是 0.000：度 k 的方程彼此相同，
 /// 没有度 1 符号可用）—— 变的是它不再依赖「零表被钳位」这个副产品。
 /// 域内 `d0` 逐位不变。
-pub fn fixed_distribution(d0 : Int32, k : Int32) -> Distribution {
+///
+/// `k < 1` 报 `EmptySource`（LT33）：`Array::make(k, 0.0)` 对负 k 是 trap，
+/// 而 `d0` 的钳位契约只覆盖 `k >= 1` 的域。
+pub fn fixed_distribution(d0 : Int32, k : Int32) -> Distribution raise LtError {
+  if k < 1 {
+    raise LtError::EmptySource
+  }
   let values : Array[Double] = Array::make(k, 0.0)
   let mut clamped = d0
   if clamped < 1 {
@@ -236,7 +252,13 @@ pub fn fixed_distribution(d0 : Int32, k : Int32) -> Distribution {
 
 ///|
 /// 理想孤波分布。
-pub fn ideal_soliton(k : Int32) -> Distribution {
+///
+/// `k < 1` 报 `EmptySource` 而不是 trap（LT33）；修复前 `k = 0` 还会静默
+/// 返回一张 `k=0` 的全零表 —— `validate_distribution` 自己都会拒绝的对象。
+pub fn ideal_soliton(k : Int32) -> Distribution raise LtError {
+  if k < 1 {
+    raise LtError::EmptySource
+  }
   let values : Array[Double] = Array::make(k, 0.0)
   for i = 0; i < k; i = i + 1 {
     values[i] = ideal_rho(i + 1, k)
@@ -246,11 +268,17 @@ pub fn ideal_soliton(k : Int32) -> Distribution {
 
 ///|
 /// 鲁棒孤波分布 `μ(d) = (ρ(d) + τ(d)) / β`。
+///
+/// `k < 1` 报 `EmptySource` 而不是 trap（LT33，与 `robust_soliton_checked`
+/// 的 `InvalidDegree` 域检查同一批 K；checked 入口的文案不变）。
 pub fn robust_distribution(
   k : Int32,
   c : Double,
   delta : Double,
-) -> Distribution {
+) -> Distribution raise LtError {
+  if k < 1 {
+    raise LtError::EmptySource
+  }
   let beta = robust_beta(k, c, delta)
   let values : Array[Double] = Array::make(k, 0.0)
   for i = 0; i < k; i = i + 1 {
@@ -298,7 +326,9 @@ pub fn robust_soliton_checked(
   if delta <= 0.0 || delta > 1.0 || delta.is_nan() {
     return Err(LtError::DistributionNotNormalized(delta))
   }
-  let dist = robust_distribution(k, c, delta)
+  // k >= 1 已在上方确认，LT33 的 EmptySource 分支在这里结构性不可达；
+  // catch 只是让 Result 风格的入口不必变成 raise 风格。
+  let dist = robust_distribution(k, c, delta) catch { e => return Err(e) }
   match validate_distribution(dist) {
     Ok(_) => Ok(dist)
     Err(e) => Err(e)
@@ -310,11 +340,12 @@ pub fn robust_soliton_checked(
 ///
 /// 循环里要抽很多次度数时，请先 `robust_distribution(...)` 拿到 `Distribution`
 /// 再反复 `Distribution::sample` —— 那才是 O(log K) 的路径，这条是 O(K)。
+/// `k < 1` 与 `robust_distribution` 同一份裁决（LT33）：`EmptySource`。
 pub fn sample_degree(
   rng : Ltrng,
   k : Int32,
   c : Double,
   delta : Double,
-) -> Int32 {
+) -> Int32 raise LtError {
   robust_distribution(k, c, delta).sample(rng)
 }
