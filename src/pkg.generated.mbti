@@ -46,7 +46,7 @@ pub fn default_seed() -> UInt64
 
 pub fn dequantize_param(Int32) -> Double
 
-pub fn distribute_from_array(Int32, Array[Double]) -> Distribution
+pub fn distribute_from_array(Int32, Array[Double]) -> Distribution raise LtError
 
 pub fn distribution_comparison(Int32, Double, Int32, UInt64, Int32) -> Array[(String, CurvePoint)] raise LtError
 
@@ -60,7 +60,7 @@ pub fn evaluate(Int32, Array[Double], Int32, UInt64, Int32, Double, Double) -> A
 
 pub fn fixed_degree_success_rate(Int32, Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
 
-pub fn fixed_distribution(Int32, Int32) -> Distribution
+pub fn fixed_distribution(Int32, Int32) -> Distribution raise LtError
 
 pub fn floyd_subset(Ltrng, Int32, Int32) -> Array[Int32]
 
@@ -86,7 +86,7 @@ pub fn header_len() -> Int32
 
 pub fn ideal_rho(Int32, Int32) -> Double
 
-pub fn ideal_soliton(Int32) -> Distribution
+pub fn ideal_soliton(Int32) -> Distribution raise LtError
 
 pub fn ideal_success_rate(Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
 
@@ -102,7 +102,7 @@ pub fn payload_hash(Bytes) -> UInt64
 
 pub fn quantize_param(Double) -> Int32
 
-pub fn random_sources(UInt64, Int32, Int32) -> Array[Bytes]
+pub fn random_sources(UInt64, Int32, Int32) -> Array[Bytes] raise LtError
 
 pub fn reassemble(Array[Bytes], Int32) -> Bytes
 
@@ -112,7 +112,7 @@ pub fn rejection_threshold(Int32) -> UInt64
 
 pub fn robust_beta(Int32, Double, Double) -> Double
 
-pub fn robust_distribution(Int32, Double, Double) -> Distribution
+pub fn robust_distribution(Int32, Double, Double) -> Distribution raise LtError
 
 pub fn robust_kr_index(Int32, Double, Double) -> Int32
 
@@ -128,7 +128,7 @@ pub fn run_trial(Int32, Double, UInt64, Int32, Double, Double) -> TrialOutcome r
 
 pub fn run_with_distribution(Distribution, Int32, Double, Int32, UInt64, Int32) -> CurvePoint raise LtError
 
-pub fn sample_degree(Ltrng, Int32, Double, Double) -> Int32
+pub fn sample_degree(Ltrng, Int32, Double, Double) -> Int32 raise LtError
 
 pub fn splitmix64(UInt64) -> UInt64
 
