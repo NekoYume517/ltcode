@@ -119,6 +119,11 @@ pub fn Encoder::try_new(
 /// 修法：先把 `seed` 与 `index` **分别**过一遍 splitmix64（各自扩散到全 64 位），
 /// 再用一次异或合并，最后再过一遍 splitmix64。这样相邻的 index 或相邻的 seed
 /// 都会让派生状态彻底不同。
+///
+/// 回归锁：`src/trial_independence_test.mbt`（LT36，2026-11-24 审计）—— 10 个
+/// 不相交种子窗口的块间标准差必须 <= 二项 3σ（当前实测 sd=0.0195、上界≈0.085），
+/// 且聚合成功率必须等于逐次 `run_trial(seed + t, …)` 的重算。这两条经变异验证：
+/// 把这里换回 `splitmix64(seed ^ index)` 立刻红。
 pub fn symbol_rng(seed : UInt64, index : Int32) -> Ltrng {
   let mixed = splitmix64(
     splitmix64(seed) ^ splitmix64(index.to_uint64() + 0x9E3779B97F4A7C15UL),
