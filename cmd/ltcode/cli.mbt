@@ -1118,7 +1118,18 @@ fn cmd_decode(args : Args) -> Unit {
       println(
         "decode INCOMPLETE: need more symbols (missing \{missing.length()} of \{container.k} source symbols)",
       )
-      println("missing indices: \{join_ints(missing)}")
+      // LT35（2026-11-24 审计）：这一行**必须有界**。`missing.length()` 的域
+      // 是 K（`max_source_symbols()` = `1 << 20`），而 `--count 0` 这种
+      // 「结构完好但没有符号」的容器（43 字节，README 明确承认它合法）
+      // 会让缺失集是全部 K 个下标。修复前实测 43 字节输入 → 7,277,598 字节
+      // stdout。只列前 `LT_MAX_LISTED_MISSING` 项，剩下的**如实计数**。
+      let (shown, omitted) = missing_preview(missing, LT_MAX_LISTED_MISSING)
+      println("missing indices: \{shown}")
+      if omitted > 0 {
+        println(
+          "  (\{omitted} more indices not listed; this line is capped at \{LT_MAX_LISTED_MISSING} entries so it cannot grow with K)",
+        )
+      }
       // LT18（2026-11-17 审计）：域内篡改头部参数（`c_q` → 101/255 等）也会
       // 落到这里 —— 子集全变，剥皮卡住。**结论仍然是 `Incomplete`**：LT 没有
       // 逐符号校验和，而载荷哈希只能在 `Complete` 之后才算，因此「参数与符号
@@ -1135,6 +1146,46 @@ fn cmd_decode(args : Args) -> Unit {
       exit_incomplete()
     }
   }
+}
+
+///|
+/// 呈现缺失下标时最多列出几个（LT35，2026-11-24 审计）。
+///
+/// 取值依据不是「好看」：README / DEMO 里逐字引用的 `K=100` 例子有 51 个
+/// 缺失下标，上限必须 ≥ 51 才能让那些片段保持逐字节不变；64 是 2 的幂，
+/// 留了一点余量，同时把单行长度钉在「几百字符」这个量级。
+pub const LT_MAX_LISTED_MISSING : Int32 = 64
+
+///|
+/// 把缺失下标渲染成**有界**的一段文本，返回 `(文本, 省略个数)`。
+///
+/// 为什么要这个函数（LT35，2026-11-24 审计）：
+///
+/// - **现象**：`--symbols 1048576 --count 0` 写出的容器只有 **43 字节**
+///   （README 明确说这种容器结构完好、合法），而 `decode` 把 `missing`
+///   里 1,048,576 个下标全铺在一行 —— 实测 stdout 7,277,598 字节、
+///   单行 6,888,889 字符，放大 **≈ 1.7e5 倍**。解码本身 1.3 s，输出占了
+///   绝大部分墙钟，而这一行没有任何调用方需要读完。
+/// - **根因**：`missing` 的长度域就是 `K`（上界 `max_source_symbols()`
+///   = `1 << 20`），而渲染路径 `join_ints(missing)` 与这个域成正比，
+///   全链路没有上限 —— 与 LT33 / lincheck LC-31 同族（把输入规模映射成
+///   控制台输出的路径）。
+/// - **修法**：只列前 `limit` 项，并把**真实**省略个数原样返回；调用方
+///   必须把它说出来。「省略个数」不能藏：静默截断会让调用方以为缺失
+///   就这么多，那是本次要消灭的那类谎报。
+///
+/// `limit < 0` 按 0 处理（只声明省略、不列任何下标）。
+pub fn missing_preview(
+  missing : Array[Int32],
+  limit : Int32,
+) -> (String, Int32) {
+  let cap = if limit < 0 { 0 } else { limit }
+  let shown = if missing.length() < cap { missing.length() } else { cap }
+  let kept : Array[Int32] = []
+  for i = 0; i < shown; i = i + 1 {
+    kept.push(missing[i])
+  }
+  (join_ints(kept), missing.length() - shown)
 }
 
 ///|

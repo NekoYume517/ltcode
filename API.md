@@ -821,6 +821,26 @@ pub fn solvability_note(k : Int32, count : Int32, missing : Int32) -> String  //
 但别把它当"空文件编码" —— 空输入早在 `SourceBlock::from_bytes` 就被
 `EmptySource` 拒掉了。
 
+### `decode` 的缺失下标行有界（LT35，2026-11-24）
+
+```moonbit
+/// 最多列出多少个缺失下标
+pub const LT_MAX_LISTED_MISSING : Int32 = 64
+/// 有界渲染：返回 (选出的文本, 省略个数)，省略数由调用方如实说出
+pub fn missing_preview(missing : Array[Int32], limit : Int32) -> (String, Int32)
+```
+
+`Incomplete` 的 `missing` 长度域是 `K`（上界 `max_source_symbols()` = `1 << 20`），
+而 `decode` 原来把整份列表铺成一行。`--symbols 1048576 --count 0` 写出的
+容器只有 **43 字节**（上一条明确承认它合法），修复前 `decode` 对它输出
+**7,277,598 字节** stdout、单行 6,888,889 字符 —— 输入规模映射成控制台输出的
+路径没有上界，与 LT33 / lincheck LC-31 同族。修复后只列前
+`LT_MAX_LISTED_MISSING` 项并追加一行
+`(N more indices not listed; this line is capped at 64 entries ...)`，
+同一输入 379 字节。上限取 64 的理由：README / DEMO 逐字引用的 `K=100`
+例子有 51 个缺失下标，必须保持逐字节不变。回归见
+`cmd/ltcode/missing_preview_wbtest.mbt`。
+
 `unpack_container` 对 `symbol_len` 的域校验只看字段自身
 （`1 <= symbol_len <= Int32.MAX`），**不再**用「文件总长度」当上界：零符号
 容器没有符号体，43 字节的头部长度会把 `symbol_len > 43` 的合法头部判死
