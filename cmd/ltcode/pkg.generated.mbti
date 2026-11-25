@@ -66,6 +66,8 @@ pub fn missing_preview(Array[Int32], Int32) -> (String, Int32)
 
 pub fn num_error(String, String, String) -> String
 
+pub fn out_path_error(Args, String) -> String?
+
 pub fn parse_args(Array[String]) -> Args
 
 pub fn parse_finite_double(String) -> Double?
@@ -75,6 +77,8 @@ pub fn parse_overheads(String) -> Array[Double]
 pub fn parse_overheads_strict(String) -> Result[Array[Double], String]
 
 pub fn parse_seed_token(String) -> UInt64?
+
+pub fn resolve_out_path(Args, String, String) -> String?
 
 pub fn should_verify_solvability(Int32) -> Bool
 
@@ -103,6 +107,7 @@ pub struct Args {
 pub fn Args::double(Self, String) -> ArgNum[Double]
 pub fn Args::int(Self, String) -> ArgNum[Int32]
 pub fn Args::str(Self, String) -> String?
+pub fn Args::str_present(Self, String) -> Bool
 pub fn Args::uint64(Self, String) -> ArgNum[UInt64]
 
 // Type aliases

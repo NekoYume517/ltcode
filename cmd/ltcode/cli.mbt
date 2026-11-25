@@ -858,7 +858,21 @@ fn cmd_encode(args : Args) -> Unit {
     exit_usage()
     return
   }
-  let out_path = args.str("out").unwrap_or("\{input}.ltc")
+  // LT38（2026-11-26 审计）：`--out ""` 是「**给了**一个空路径」，不是
+  // 「没给」。修复前它回退成 `<input>.ltc`（默认名），于是脚本里
+  // `--out "$VAR"` 而 `VAR` 为空时，容器被静默写到了别处并覆盖同名文件，
+  // exit 仍是 0。空路径必然写不成，在用法层点名，别让它落到默认名上。
+  let out_path = match resolve_out_path(args, "out", "\{input}.ltc") {
+    Some(v) => v
+    None => {
+      let msg = out_path_error(args, "out").unwrap_or(
+        "--out needs a non-empty path",
+      )
+      arg_error(msg)
+      exit_usage()
+      return
+    }
+  }
   let seed = match opt_seed(args) {
     None => {
       exit_usage()
@@ -1027,7 +1041,20 @@ fn cmd_decode(args : Args) -> Unit {
     }
     Some(v) => v
   }
-  let out_path = args.str("out").unwrap_or("decoded.bin")
+  // LT38（2026-11-26 审计）：`--out ""` 绝不许回退成默认名 `decoded.bin`。
+  // 那是 CWD 下的一个**具体文件**，回退等于静默覆盖用户手上已有的同名文件
+  // 且 exit 0。空路径报用法错误，缺项才走默认名（LT31 契约不变）。
+  let out_path = match resolve_out_path(args, "out", "decoded.bin") {
+    Some(v) => v
+    None => {
+      let msg = out_path_error(args, "out").unwrap_or(
+        "--out needs a non-empty path",
+      )
+      arg_error(msg)
+      exit_usage()
+      return
+    }
+  }
   let data = match read_file(input) {
     None => {
       arg_error("cannot read input file '\{input}'")

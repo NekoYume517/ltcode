@@ -206,6 +206,61 @@ pub fn Args::str(self : Args, key : String) -> String? {
 }
 
 ///|
+/// 这个键**是否在命令行上出现过**（不区分值是空还是非空）。
+///
+/// 与 `str` 配合起来给出字符串参数的三态，和数值参数的
+/// `Absent / Present / Invalid` 对齐（LT38，2026-11-26 审计）：
+///
+/// - `str_present(k) == false`            → 没给（用默认值）
+/// - `str_present(k) && str(k).is_none()` → 给了，但值是空串
+/// - `str(k) != None`                     → 给了真值
+///
+/// 中间那一档在修复前**无法表达**：`str` 把「没给」和「给了空串」折叠成
+/// 同一个 `None`，于是 `--out ""` 静默回退默认文件名，覆盖掉了用户既有的
+/// 文件。`parse_args` 其实一直记着这个键（`map.contains` 为 true），
+/// 只是没有出口把这个事实暴露出来。
+pub fn Args::str_present(self : Args, key : String) -> Bool {
+  self.map.contains(key)
+}
+
+///|
+/// 「会写文件的出口参数」的裁决：把**显式空值**判成用法错误。
+///
+/// 为什么只卡出口参数（LT38 的口径）：`--input ""` 走 `needs --input` 是
+/// 对的（读一个空路径本来就没意义，且不写任何东西）；而 `--out ""` 的
+/// 后果是**回退默认路径并覆盖同名文件** —— 那是用户数据丢失，不是
+/// "参数没写全"。所以这一档只在写文件的参数上收紧。
+///
+/// 返回 `Some(文本)` 表示该报用法错误（调用方 `arg_error` + `exit_usage`）。
+pub fn out_path_error(args : Args, key : String) -> String? {
+  if args.str_present(key) && args.str(key).is_none() {
+    Some("--\{key} needs a non-empty path, got ''")
+  } else {
+    None
+  }
+}
+
+///|
+/// 出口参数解析成**最终要写的路径**。
+///
+/// - 没给 → `Some(默认值)`（LT31 的既有契约，`--out` 缺项仍走默认名）
+/// - 给了空串 → `None`（调用方必须报用法错误，**不许**落到默认名）
+/// - 给了真值 → `Some(真值)`
+///
+/// `None` 与「默认值是 `None`」不会撞车：默认值参数是 `String` 而非
+/// `String?`，缺项时一定给出一个具体路径。
+pub fn resolve_out_path(
+  args : Args,
+  key : String,
+  default_path : String,
+) -> String? {
+  match args.str(key) {
+    Some(v) => Some(v)
+    None => if args.str_present(key) { None } else { Some(default_path) }
+  }
+}
+
+///|
 /// 数值参数的**三态**取值。
 ///
 /// LT-1 的根因就是这里只有两态：`None` 同时表示"没给这个参数"和"给了，
