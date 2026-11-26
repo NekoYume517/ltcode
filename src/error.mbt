@@ -88,6 +88,19 @@ pub(all) suberror LtError {
 }
 
 ///|
+/// `LtError` 的**变体总条数**（LT43，2026-11-29 审计）。
+///
+/// 存在的理由是让"新增变体"必须显式面对"渲染是否带单位"这条判据：
+/// `cmd/ltcode/error_dimension_audit_test.mbt` 有一个显式的变体清单，
+/// 它的长度必须等于这个常量。加了变体而忘了往清单里补，那条断言就会红。
+///
+/// 为什么是常量而不是从 AST 反射：本包是库包，不能读自己的源码。所以两边
+/// （这里与测试里的清单）互为对账 —— 改一边忘了另一边，测试当场报差异。
+pub fn lt_error_variant_count() -> Int32 {
+  15
+}
+
+///|
 /// 稳定的、人类可读的错误文本。
 ///
 /// 不用 `derive(Debug)` 的 `to_repr`：那个输出包含类型名与括号嵌套，
@@ -100,10 +113,15 @@ pub fn error_text(e : LtError) -> String {
     SourceTooLarge(k, limit) =>
       "source too large: K=\{k} exceeds the limit of \{limit} source symbols"
     SymbolLengthMismatch(a, b) =>
-      "symbol length mismatch: \{a} vs \{b}; all source symbols must be equal length"
+      // LT43（2026-11-29 审计）：原来渲染成 `\{a} vs \{b}` —— 两个裸数字并排，
+      // 单位要跨过分号才在句子后半段找到。改成把单位写在数字旁边。
+      "symbol length mismatch: length \{a} bytes vs length \{b} bytes; all source symbols must be equal length"
     InvalidSourceBlock(reason) => "invalid source block: \{reason}"
     InvalidDegree(d, k) =>
-      "invalid degree \{d}: must satisfy 1 <= d <= K (\{k})"
+      // LT43（2026-11-29 审计）：`d` 是**度数**（无量纲计数值），`K` 是**源符号数**。
+      // 旧文案 `invalid degree \{d}: must satisfy 1 <= d <= K (\{k})` 把 k 裸放在
+      // 括号里，读者不知道那个数是 K。现在两处都带主语。
+      "invalid degree \{d}: degree must satisfy 1 <= d <= K, and K here is \{k} source symbols"
     DistributionNotNormalized(sum) =>
       "degree distribution is not normalized: sum=\{sum} (tolerance 1e-12)"
     TruncatedSymbol(actual, wanted) =>
@@ -129,16 +147,21 @@ pub fn error_text(e : LtError) -> String {
         "invalid container header: \{name}=\{value} exceeds the maximum \{high}"
       }
     TrailingBytes(offset, len) =>
-      "trailing bytes after the last symbol: \{offset} bytes consumed of \{len}; this is not the same file that was packed"
+      // LT43（2026-11-29 审计）：`\{offset} bytes consumed of \{len}` 里 len 裸放，
+      // 读者得从前面那个 `bytes` 推断单位。两处都写出来。
+      "trailing bytes after the last symbol: \{offset} bytes consumed of \{len} bytes total; this is not the same file that was packed"
     CorruptionDetected(actual, expected) =>
       "payload checksum mismatch: got 0x\{actual.to_string(radix=16)}, expected 0x\{expected.to_string(radix=16)}; the received symbols are corrupted or mixed from another encoding"
     ParamOutOfImage(name, value, low, high) =>
       "parameter \{name}=\{value} is outside the container's quantized grid [\{low}, \{high}): the header stores round(\{name}*100) in a single byte, so \{name} must round to an integer in that range"
     ResourceLimitExceeded(name, actual, limit) =>
+      // LT43（2026-11-29 审计）：`\{name}` 已经带主语（`container_bytes` 这类），
+      // 但 `maximum \{limit}` 里 limit 裸放 —— 读者要回头看 name 才知道单位。
+      // 现在把 name 重复在 limit 旁边，一眼就是同一个量的上限。
       if actual < 0L {
         "invalid resource requirement: \{name}=\{actual} must be non-negative"
       } else {
-        "resource limit exceeded: \{name}=\{actual} exceeds the maximum \{limit}; reduce the container or symbol dimensions before allocating or performing I/O"
+        "resource limit exceeded: \{name}=\{actual} exceeds the maximum \{name} of \{limit}; reduce the container or symbol dimensions before allocating or performing I/O"
       }
   }
 }

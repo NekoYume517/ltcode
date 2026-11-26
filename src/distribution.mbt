@@ -318,13 +318,25 @@ pub fn robust_soliton_checked(
   delta : Double,
 ) -> Result[Distribution, LtError] {
   if k < 1 {
-    return Err(LtError::InvalidDegree(k, k))
+    // LT43（2026-11-29 审计）：原来报 `InvalidDegree(k, k)` —— 把 **K** 塞进了
+    // `d`（度数）的位置，渲染成 `invalid degree 0: must satisfy 1 <= d <= K (0)`：
+    // 用户在错的字段上看到自己的 0，而且**度数根本没被检查过**。
+    //
+    // 兄弟入口 `robust_distribution` 对同一个 `k < 1` 报的是 `EmptySource`
+    // （LT33 的裁定）。两个入口对同一输入给出不同错位，调用方没法统一处理。
+    // 这里对齐到 `EmptySource`：没有源符号，就没有分布可谈。
+    return Err(LtError::EmptySource)
   }
   if c <= 0.0 || c.is_nan() {
-    return Err(LtError::DistributionNotNormalized(c))
+    // LT43：`c` 不是"分布的求和"。报 `DistributionNotNormalized` 会让用户收到
+    // `degree distribution is not normalized: sum=-1 (tolerance 1e-12)` ——
+    // 他给的是 `c`，却被指到一张他从没写过的分布表上。这正是 LT11 在容器头
+    // 路径修掉的同一类错位（见 `ParamOutOfImage` 的注释）。参数越域就该报参数。
+    return Err(LtError::ParamOutOfImage("c", c, 0.0, 0.0))
   }
   if delta <= 0.0 || delta > 1.0 || delta.is_nan() {
-    return Err(LtError::DistributionNotNormalized(delta))
+    // 同上：`delta` 是目标失败概率，不是分布求和。
+    return Err(LtError::ParamOutOfImage("delta", delta, 0.0, 1.0))
   }
   // k >= 1 已在上方确认，LT33 的 EmptySource 分支在这里结构性不可达；
   // catch 只是让 Result 风格的入口不必变成 raise 风格。

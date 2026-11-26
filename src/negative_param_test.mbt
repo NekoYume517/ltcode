@@ -78,13 +78,18 @@ test "LT33: robust_distribution rejects k < 1 instead of trapping" {
     })
     inspect(outcome, content="empty_source")
   }
-  // checked 入口的结论与文案不变（它先做自己的域检查：InvalidDegree(k, k)）
+  // LT43（2026-11-29 审计）：checked 入口原来报 `InvalidDegree(k, k)` —— 把 **K**
+  // 塞进 `d`（度数）的位置，于是 `k = 0` 渲染成
+  // `invalid degree 0: must satisfy 1 <= d <= K (0)`：用户在**错的字段**上看到
+  // 自己的 0，而度数根本没被检查。现在与兄弟入口 `robust_distribution` 对齐到
+  // `EmptySource`（同一个 `k < 1` 必须给同一份裁决）。
   let outcome = match @src.robust_soliton_checked(0, 0.1, 0.5) {
-    Err(@src.InvalidDegree(0, 0)) => "invalid_degree"
+    Err(@src.EmptySource) => "empty_source"
+    Err(@src.InvalidDegree(_, _)) => "invalid_degree"
     Err(_) => "other_err"
     Ok(_) => "accepted"
   }
-  inspect(outcome, content="invalid_degree")
+  inspect(outcome, content="empty_source")
 }
 
 ///|
