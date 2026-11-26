@@ -34,15 +34,21 @@
 > 折行的转录（详见该节注），并用 `cmd/ltcode/doc_count_lock_test.mbt`
 > 把「文档计数 == 源码树真实计数」锁死 —— 此前 8 个提交都没回头改文档，
 > 257/794 一直漂着。
+> 2026-11-28 LT40 把**警告数**从文档里彻底拿掉（改成「见 CI / 自己跑一次」）：
+> 它不是源码树的不变量，而是「工具链版本 + lint 集」的因变量，抄进来就是在
+> 承诺一件控制不了的事。测试总数 **286**；`doc_warning_lock_test.mbt` 之后
+> 任何精确警告数断言都会被拒。
 
 ## 1. 构建与测试
 
 ```powershell
 $ moon check
-# Finished. moon: ran 5 tasks, now up to date (826 warnings, 0 errors)
+# Finished. moon: ran 5 tasks, now up to date (0 errors)
+#   ↑ 这里刻意不抄警告数：它随工具链版本变化（不是本仓的不变量），
+#     写死就成了「看起来像精确事实、其实是抄来的」数字。见 §1 末尾注。
 
 $ moon test
-Total tests: 283, passed: 283, failed: 0.
+Total tests: 286, passed: 286, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
@@ -51,6 +57,18 @@ $ moon fmt --check
 $ moon build --target wasm
 # 生成 _build/wasm/debug/build/cmd/ltcode/ltcode.wasm
 ```
+
+**关于警告数（LT40，2026-11-28）**：`moon check` 的警告数**不是**本仓的属性，
+而是「`moonc` 版本 + 默认 lint 集」的因变量 —— 同一个 commit，换一版工具链这个
+数字就变（历史上实测漂过 721 → 759 → 762 → 785 → 794 → 826）。把它抄进文档，
+等于让读者把"当次运行的输出"当成"这条命令应有的输出"，一个正常的工具链差异
+会被误判成回归。
+
+所以本节只保留**契约部分**（`0 errors`），警告数请自己跑一次 `moon check` 看
+当次值。`Total tests` 那个数相反 —— 它是源码树的不变量（`^test "` 的条数只由
+`.mbt` 文件内容决定），所以由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住；
+`docs/DEMO.md` 与 `README.md` 里任何**精确警告数断言**则由
+`cmd/ltcode/doc_warning_lock_test.mbt` 拒绝（年表里的历史实测值除外）。
 
 ## 2. 端到端：编码 → 丢包 → 逐字节还原
 

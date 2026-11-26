@@ -483,13 +483,20 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 826 warnings, 0 errors
-moon test             # 283 tests, all pass
+moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链版本变化，不在此写死
+moon test             # 286 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（283 条，按 `^test "` 计数）：
+> **为什么这里不写警告数**：警告数不是本仓的不变量，而是「工具链版本 + lint 集」
+> 的因变量 —— 同一个 commit 换一版 `moonc`，数字就变（历史上漂过 721 → 759 →
+> 762 → 785 → 794 → 826）。写死在文档里等于承诺一件自己控制不了的事，而且会
+> 让人把一个正常的工具链差异误判成回归。`0 error` 才是这条命令的契约，由 CI
+> 强制；警告数请自己跑一次 `moon check` 看当次值。`moon test` 的条数倒是源码树
+> 的不变量，所以上面那个数由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住（LT40）。
+
+测试分布（286 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -539,7 +546,8 @@ moon build --target wasm
 | `trial_independence_test.mbt` | 3 | 「试验之间必须独立」的回归锁：逐次重算、块间标准差落在二项区间、相邻种子的符号子集不重合（LT36，2026-11-24 审计） |
 | `missing_preview_wbtest.mbt` | 4 | `decode` 的缺失下标诊断行有界：在 64 项处截断并如实计数、总长不随 K 增长（LT35，2026-11-26 审计） |
 | `out_path_empty_test.mbt` | 4 | `--out ""` 报用法错误、不静默回退默认名、不覆盖哨兵文件（LT38，2026-11-26 审计） |
-| `doc_count_lock_test.mbt` | 5 | 本文档自身：声称的测试总数 == 源码树真实条数、表格各行之和 == 总数、每个测试文件都有一行（LT39，2026-11-27 审计） |
+| `doc_count_lock_test.mbt` | 5 | 本文档自身：声称的测试总数 == 源码树真实条数、表格各行之和 == 总数、每个测试文件都有一行、DEMO §3 转录与真实输出一致、§1 与 README 计数一致（LT39，2026-11-27 审计） |
+| `doc_warning_lock_test.mbt` | 3 | 本文档自身：README / DEMO §1 / DEMO 正文都不得再把**精确警告数**写成事实；年表的历史实测值豁免（LT40，2026-11-28 审计） |
 | `payload_len_zero_test.mbt` | 2 | `payload_len=0` 的伪造容器必须报错（LT21）、零符号容器与非零载荷不受影响（2026-11-17 审计） |
 | `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 | `pack_param_finite_test.mbt` | 3 | `pack_container` 的非有限 `c`/`delta` 闸门：四个写读参数的入口同源、`c=1000` 的钳位契约不误伤（2026-11-17-b 审计） |
