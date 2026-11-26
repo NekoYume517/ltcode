@@ -208,12 +208,16 @@ test "LT41-B: count_max floor boundary accepts exactly and rejects one more" {
     } catch {
       e => @src.error_text(e)
     }
-    // **只断言 "truncated symbol" 太弱**：`count_max` 差一会把
-    // "got 4 bytes, expected 5" 变成 "got 0 bytes, expected 4" —— 两者都
-    // 含 "truncated symbol"，子串断言抓不住。这里锁住**具体数值**：
-    // 声明 n+1 个、实有 n 个时，报错必须点名「实际读到 n、期望 n+1」。
-    assert_true(msg.contains("truncated symbol"))
-    assert_true(msg.contains("got \{n} bytes, expected \{n + 1}"))
+    // **只断言 "truncated" 太弱**：`count_max` 差一会把
+    // "got 4 of 5" 变成 "got 0 of 4" —— 两者都含 "truncated"，子串断言抓不住。
+    // 这里锁住**具体数值**：声明 n+1 条、实有 n 条时，报错必须点名
+    // 「够读 n 条、头部声明 n+1 条」。
+    //
+    // LT42（2026-11-28 审计）：这个分支现在报 `TruncatedSymbolRecords`
+    // （量纲 = 符号条数），文案是 `got {n} of {n+1} symbol(s)`。旧文案
+    // `got {n} bytes` 把条数说成字节，已改。
+    assert_true(msg.contains("truncated symbol records"))
+    assert_true(msg.contains("got \{n} of \{n + 1} symbol(s)"))
     ignore(body)
   }
 }

@@ -109,9 +109,15 @@ test "LT-C: exact-fit symbol bodies still read successfully" {
 }
 
 ///|
-/// 截断到"最后一个符号体少一个字节"时必须报 `TruncatedSymbol`，
-/// 且报出的数字必须是**可理解**的剩余量与请求量（不含回绕后的负数）。
-test "LT-C: a body short by one byte reports sane byte counts" {
+/// 截断到「最后一个符号体少一个字节」时必须报截断，且报出的数字必须是
+/// **可理解**的剩余量 —— 不含回绕后的负数。
+///
+/// LT42（2026-11-28 审计）：这条原来只断言 `TruncatedSymbol`。删掉最后一个
+/// 字节后，剩余字节恰好不够读**最后一条记录**，于是现在报量纲更准确的
+/// `TruncatedSymbolRecords`（「够读 N 条 / 头部声明 M 条」）。两者都表示
+/// "文件在这里就没了"，只是切点不同（记录内 vs 记录边界），所以这条
+/// 两种都接受，但各自断言自己的数字合法。
+test "LT-C: a body short by one byte reports a sane truncation, never a wrapped number" {
   let block = sample_block(2, 3)
   let payload = sample_payload(block)
   let symbols : Array[Symbol] = [Symbol::{ index: 0, data: b"\x01\x02\x03", }]
@@ -119,14 +125,22 @@ test "LT-C: a body short by one byte reports sane byte counts" {
   let cut = packed.clamped_view(end=packed.length() - 1).to_owned()
   try {
     let _ = unpack_container(cut)
-    abort("expected TruncatedSymbol")
+    abort("expected a truncation error")
   } catch {
     TruncatedSymbol(actual, wanted) => {
-      // 实得 = 剩余字节（1 字节不够读 3），期望 = 请求的 3 字节
+      // 实得 = 剩余字节，期望 = 请求的字节数；两者都必须非负（不回绕）。
       assert_true(actual >= 0)
       assert_true(wanted > 0)
-      // 报错文本里不能出现负数（回绕的痕迹）
       assert_true(!error_text(TruncatedSymbol(actual, wanted)).contains("-"))
+    }
+    TruncatedSymbolRecords(actual, wanted) => {
+      // 实得 = 够读的记录条数，期望 = 头部声明的条数。
+      assert_true(actual >= 0)
+      assert_true(wanted > 0)
+      assert_true(actual <= wanted)
+      assert_true(
+        !error_text(TruncatedSymbolRecords(actual, wanted)).contains("-"),
+      )
     }
     _ => abort("wrong variant for a short body")
   }

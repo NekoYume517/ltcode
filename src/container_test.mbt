@@ -147,6 +147,13 @@ test "container: quantize/dequantize are inverse on percentages" {
 }
 
 ///|
+/// 截断的输入必须报错，**绝不用填充值凑数**。
+///
+/// LT42（2026-11-28 审计）：第三个子例（头部完整、符号数据被截掉一字节）
+/// 现在报 `TruncatedSymbolRecords`——它切在**记录边界**上，量纲是条数而不是
+/// 字节。前两个子例（空文件、头都不全）仍然是真字节不足，继续报
+/// `TruncatedSymbol`。两种都表示"文件在这里就没了"，测试关心的是
+/// **绝不静默补齐**，所以两种都接受。
 test "container: truncated input raises, never invents bytes" {
   let block = sample_block(2, 2)
   let payload = sample_payload(block)
@@ -158,6 +165,7 @@ test "container: truncated input raises, never invents bytes" {
     abort("expected failure on empty input")
   } catch {
     TruncatedSymbol(_, _) => ()
+    TruncatedSymbolRecords(_, _) => ()
     _ => abort("wrong error for empty")
   }
   // 截到头部中间
@@ -167,6 +175,7 @@ test "container: truncated input raises, never invents bytes" {
     abort("expected failure on short header")
   } catch {
     TruncatedSymbol(_, _) => ()
+    TruncatedSymbolRecords(_, _) => ()
     _ => abort("wrong error for short header")
   }
   // 头部完整但符号数据被截断
@@ -176,6 +185,7 @@ test "container: truncated input raises, never invents bytes" {
     abort("expected failure on truncated symbol body")
   } catch {
     TruncatedSymbol(_, _) => ()
+    TruncatedSymbolRecords(_, _) => ()
     _ => abort("wrong error for truncated body")
   }
 }

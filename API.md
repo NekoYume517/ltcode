@@ -580,13 +580,25 @@ pub fn error_text(e : LtError) -> String
 
 | 情况 | 变体 | `error_text` | CLI 实际输出 |
 |---|---|---|---|
-| 文件短于头部 / 符号体不全 | `TruncatedSymbol` | `truncated symbol: got N bytes, expected M` | 同左 |
+| 文件短于头部 / 符号体不全 | `TruncatedSymbol(actual, needed)` | `truncated symbol: got N bytes, expected M bytes` | 同左 |
+| `count` 声明的条数比文件装得下的多（切在**记录边界**上） | `TruncatedSymbolRecords(readable, declared)` | `truncated symbol records: got N of M symbol(s); the file ends before the count declared in the header` | 同左 |
 | 魔数不是 `LTC2` | `BadMagic` | `bad magic` | `not a ltcode container: bad magic` |
 | 版本号本构建不支持 | `UnsupportedVersion(found, supported)` | `unsupported container version F, this build supports S` | 同左 |
 | 头部字段越界 | `InvalidHeaderField(name, v, lo, hi)` | `invalid container header: NAME=V exceeds the maximum HI`（下界方向是 `... is below the minimum LO`） | 同左 |
 | 读完符号后仍有多余字节 | `TrailingBytes(used, total)` | `trailing bytes after the last symbol: USED bytes consumed of TOTAL; this is not the same file that was packed` | 同左 |
 
-五者对调用方的**动作指引**不同：截断 / 尾部多余 → 重传或该丢弃这批数据；
+> **为什么截断分成两个变体（LT42，2026-11-28）**：`TruncatedSymbol` 的两个
+> 字段**一直是字节**（7 个调用点里有 6 个传 `remaining` / `4` / `8` / `n` /
+> `data.length()` / `symbol_len`）。唯独"头部声明 `count` 条、剩余字节只够
+> `count_max` 条"那一处传的是**符号条数**，却被渲染成
+> `got 3 bytes, expected 4` —— 同一句话里两个不同量纲的数被写成同一单位，
+> 用户会按字节去算"还差多少"。所以新增 `TruncatedSymbolRecords` 承载条数
+> 量纲，`TruncatedSymbol` 保持字节量纲不变（既有调用点与测试锚点都不动）。
+>
+> 这是一次**措辞变更（非语义）**：错误的**判定条件**（何时报错、报哪个类别的
+> 故障）完全不变，变的只是那句话里的单位与主语。CLI 退出码仍是 3。
+
+六者对调用方的**动作指引**不同：截断 / 尾部多余 → 重传或该丢弃这批数据；
 魔数不符 → 换一个正确的文件；版本不符 → 换版本或升级本构建；头部字段
 越界 → 这个文件不该被本构建读。旧实现把前三者混进了两个不相干的变体
 （魔数并进 `TruncatedSymbol`，版本并进 `SourceTooLarge`，于是输出

@@ -484,7 +484,7 @@ cmd/ltcode/
 
 ```bash
 moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链版本变化，不在此写死
-moon test             # 293 tests, all pass
+moon test             # 297 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
@@ -496,7 +496,7 @@ moon build --target wasm
 > 强制；警告数请自己跑一次 `moon check` 看当次值。`moon test` 的条数倒是源码树
 > 的不变量，所以上面那个数由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住（LT40）。
 
-测试分布（293 条，按 `^test "` 计数）：
+测试分布（297 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -549,6 +549,7 @@ moon build --target wasm
 | `doc_count_lock_test.mbt` | 5 | 本文档自身：声称的测试总数 == 源码树真实条数、表格各行之和 == 总数、每个测试文件都有一行、DEMO §3 转录与真实输出一致、§1 与 README 计数一致（LT39，2026-11-27 审计） |
 | `doc_warning_lock_test.mbt` | 3 | 本文档自身：README / DEMO §1 / DEMO 正文都不得再把**精确警告数**写成事实；年表的历史实测值豁免（LT40，2026-11-28 审计） |
 | `malformed_header_test.mbt` | 7 | 恶意声明头**主动构造**矩阵：字段互相矛盾、`count_max` 整除边界、符号体短一字节、尾部多一字节、体积超限在分配前拒、K=max 单符号（LT41，2026-11-28 审计） |
+| `truncated_symbol_unit_test.mbt` | 4 | 截断错误文案的**量纲**：符号条数分支点名 `symbol(s)` 而字节分支仍说 `bytes`、两个分支文案必须不同、`got {n} of {m}` 数值锚点（LT42，2026-11-28 审计） |
 | `payload_len_zero_test.mbt` | 2 | `payload_len=0` 的伪造容器必须报错（LT21）、零符号容器与非零载荷不受影响（2026-11-17 审计） |
 | `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 | `pack_param_finite_test.mbt` | 3 | `pack_container` 的非有限 `c`/`delta` 闸门：四个写读参数的入口同源、`c=1000` 的钳位契约不误伤（2026-11-17-b 审计） |

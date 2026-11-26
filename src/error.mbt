@@ -18,8 +18,25 @@ pub(all) suberror LtError {
   InvalidDegree(Int32, Int32)
   /// 分布未归一化（实际求和值），要求 |Σμ - 1| <= 1e-12
   DistributionNotNormalized(Double)
-  /// 收到符号长度与声明不符（实际长度, 声明长度）
+  /// 收到符号长度与声明不符（实际长度, 声明长度）。**两个字段都是字节**。
+  ///
+  /// LT42（2026-11-28 审计）：这个变体一直只被字节量纲的调用点使用
+  /// （`Reader::u32_unsigned` / `u32` / `u64` / `byte` / `bytes`，
+  /// `unpack_container` 的头部不足，`decode_with_stats` 的符号体不足 ——
+  /// 共 6 处）。唯独 `unpack_container` 里 `count_raw > count_max` 那处
+  /// 传的是**符号条数**，渲染成 `got 3 bytes, expected 4` 后单位与含义不符，
+  /// 用户会按字节去算"还差多少"。那处已改报 `TruncatedSymbolRecords`。
   TruncatedSymbol(Int32, Int32)
+  /// 文件里**符号记录的条数**不够（够读条数, 头部声明条数）。
+  ///
+  /// 与 `TruncatedSymbol` 分开的理由是**量纲不同**，不是措辞洁癖：
+  /// 前者说字节，后者说符号条数。混用一个变体时，`got 3 / expected 4`
+  /// 在两个分支上字面相同而含义完全不同 —— 这是数据表里最容易被读错的形态。
+  ///
+  /// 典型现场：头部声明 `count = 4`，而剩余字节只够 `3` 条记录
+  /// （`count_max = remaining / (4 + symbol_len)`）。这不是"符号体被砍了
+  /// 一半"，而是"文件到这里就没了"。
+  TruncatedSymbolRecords(Int32, Int32)
   /// 容器的魔数不是 "LTC2" —— **不是**截断，是"这根本不是 ltcode 文件"。
   BadMagic
   /// 容器版本号本构建不支持（文件里的版本, 本构建支持的版本）
@@ -90,7 +107,9 @@ pub fn error_text(e : LtError) -> String {
     DistributionNotNormalized(sum) =>
       "degree distribution is not normalized: sum=\{sum} (tolerance 1e-12)"
     TruncatedSymbol(actual, wanted) =>
-      "truncated symbol: got \{actual} bytes, expected \{wanted}"
+      "truncated symbol: got \{actual} bytes, expected \{wanted} bytes"
+    TruncatedSymbolRecords(actual, wanted) =>
+      "truncated symbol records: got \{actual} of \{wanted} symbol(s); the file ends before the count declared in the header"
     BadMagic => "bad magic"
     UnsupportedVersion(found, supported) =>
       "unsupported container version \{found}, this build supports \{supported}"

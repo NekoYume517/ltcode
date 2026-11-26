@@ -664,7 +664,16 @@ pub fn unpack_container(data : Bytes) -> Container raise LtError {
   if count_raw > count_max {
     // 报「够读几个符号 / 头部说要几个」而不是把两个字节数硬凑成同一量纲：
     // 这里说的就是符号个数，用户不需要自己再做一次除法。
-    raise LtError::TruncatedSymbol(count_max.to_int(), count_raw.to_int())
+    //
+    // LT42（2026-11-28 审计）：旧版走 `TruncatedSymbol`，而那个变体的
+    // 文案说 `bytes` —— 同一句话里 `got 3 bytes, expected 4` 的单位是
+    // 字节，实际含义却是符号条数。改成专用的 `TruncatedSymbolRecords`，
+    // 让"条数"与"字节"在文案上不可混淆（其余 6 个调用点全是真字节，
+    // 继续用 `TruncatedSymbol`）。
+    raise LtError::TruncatedSymbolRecords(
+      count_max.to_int(),
+      count_raw.to_int(),
+    )
   }
   let count = count_raw.to_int()
   let symbols : Array[ReceivedSymbol] = []
