@@ -36,7 +36,7 @@
 > 257/794 一直漂着。
 > 2026-11-28 LT40 把**警告数**从文档里彻底拿掉（改成「见 CI / 自己跑一次」）：
 > 它不是源码树的不变量，而是「工具链版本 + lint 集」的因变量，抄进来就是在
-> 承诺一件控制不了的事。测试总数 **286**；`doc_warning_lock_test.mbt` 之后
+> 承诺一件控制不了的事。测试总数 **293**；`doc_warning_lock_test.mbt` 之后
 > 任何精确警告数断言都会被拒。
 
 ## 1. 构建与测试
@@ -48,7 +48,7 @@ $ moon check
 #     写死就成了「看起来像精确事实、其实是抄来的」数字。见 §1 末尾注。
 
 $ moon test
-Total tests: 286, passed: 286, failed: 0.
+Total tests: 293, passed: 293, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
