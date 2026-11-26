@@ -34,10 +34,10 @@
 
 ```powershell
 $ moon check
-# Finished. moon: ran 3 tasks, now up to date (794 warnings, 0 errors)
+# Finished. moon: ran 5 tasks, now up to date (826 warnings, 0 errors)
 
 $ moon test
-Total tests: 257, passed: 257, failed: 0.
+Total tests: 283, passed: 283, failed: 0.
 
 $ moon fmt --check
 # Finished. moon: no work to do        （干净时是这个输出；有改动时会打印 diff）
@@ -98,9 +98,8 @@ note: these 100 symbols cannot recover all 100 source symbols (51 missing); deco
 
 $ moon run cmd/ltcode -- decode --input examples/tight.ltc --out examples/tight.out
 decode INCOMPLETE: need more symbols (missing 51 of 100 source symbols)
-missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,
-31,33,34,36,38,42,47,50,51,52,53,54,62,65,67,69,70,71,72,73,74,75,76,77,79,81,
-83,86,89,90,92,93,94,96,98,99
+missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,31,33,34,36,38,42,47,50,51,52,53,54,62,65,67,69,70,71,72,73,74,75,76,77,79,81,83,86,89,90,92,93,94,96,98,99
+  note: this container already carries 100 symbols for K=100 yet peeling stalled; either more symbols are needed, or its header parameters (c_q/delta_q/K) do not match the symbols that were encoded
 ```
 
 `encode` 那行 `note:` 是 2026-11-12 加的**末尾可解性验算**：它用同一个解码器
@@ -112,7 +111,13 @@ missing indices: 0,2,4,6,8,9,10,18,21,22,23,24,25,29,30,
 不产生"看起来完整"的文件。同一份源码路径有测试断言：已解出的 49 个
 源符号逐字节正确（`decoder_test.mbt` 跨 200 条种子）。
 
-（注：不同次运行分块的行宽由终端决定；内容一致。）
+（注：LT18（2026-11-17）起 `decode` 在剥皮卡住时多打一行 `note:`，
+指向「符号不够」还是「头部参数与符号不匹配」这两种不同原因。上面三行
+是**程序自己排的行**，与终端宽度无关 —— LT35（2026-11-26 审计）把
+`missing indices` 那一行改成按 `LT_MAX_LISTED_MISSING = 64` 显式截断，
+超出部分补一行「N more indices not listed」，所以整段输出有上界：
+`--symbols 1048576 --count 0` 的容器也只打 379 字节。本地实测把窗口
+拉宽或缩窄，这三行逐字节不变。）
 
 ## 3b. 损坏的数据被拦住（校验和）
 

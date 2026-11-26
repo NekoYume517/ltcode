@@ -483,13 +483,13 @@ cmd/ltcode/
 ## 验证
 
 ```bash
-moon check            # 794 warnings, 0 errors
-moon test             # 257 tests, all pass
+moon check            # 826 warnings, 0 errors
+moon test             # 283 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 ```
 
-测试分布（257 条，按 `^test "` 计数）：
+测试分布（283 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -534,6 +534,12 @@ moon build --target wasm
 | `quantize_tie_test.mbt` | 2 | `quantize_param` 的进位规则作用在 binary64 乘积上（0.015→2、1.005→100）、0.005 下界可表示（2026-11-17 审计） |
 | `fixed_distribution_test.mbt` | 2 | `fixed_distribution(d0>k)` 钳到 `[1,k]` 后分布归一化、distcmp 小 K 结论不变（2026-11-17 审计） |
 | `stats_contract_test.mbt` | 3 | `xor_bytes` 的 Int32 溢出（记录性）、与 `symbol_len` 严格正比、`seed + t` 在 UInt64 上限回绕（2026-11-17 审计） |
+| `duplicate_index_test.mbt` | 3 | 容器里重复/冲突下标：后到者胜的裁决语义、CSR rev 唯一性、哈希兜底（LT34，2026-11-23 审计） |
+| `negative_param_test.mbt` | 7 | 负 `k` / 非正 `symbol_len` 在入口被拒，不再触碰分配器；`robust_distribution` / `fixed_distribution` / `sample_degree` 同一份裁决（LT33，2026-11-23 审计） |
+| `trial_independence_test.mbt` | 3 | 「试验之间必须独立」的回归锁：逐次重算、块间标准差落在二项区间、相邻种子的符号子集不重合（LT36，2026-11-24 审计） |
+| `missing_preview_wbtest.mbt` | 4 | `decode` 的缺失下标诊断行有界：在 64 项处截断并如实计数、总长不随 K 增长（LT35，2026-11-26 审计） |
+| `out_path_empty_test.mbt` | 4 | `--out ""` 报用法错误、不静默回退默认名、不覆盖哨兵文件（LT38，2026-11-26 审计） |
+| `doc_count_lock_test.mbt` | 5 | 本文档自身：声称的测试总数 == 源码树真实条数、表格各行之和 == 总数、每个测试文件都有一行（LT39，2026-11-27 审计） |
 | `payload_len_zero_test.mbt` | 2 | `payload_len=0` 的伪造容器必须报错（LT21）、零符号容器与非零载荷不受影响（2026-11-17 审计） |
 | `pack_contract_test.mbt` | 3 | `pack_container` 的前置校验：超长 payload / 符号体长度不符必须报错，自洽输入不误伤（2026-11-17 审计） |
 | `pack_param_finite_test.mbt` | 3 | `pack_container` 的非有限 `c`/`delta` 闸门：四个写读参数的入口同源、`c=1000` 的钳位契约不误伤（2026-11-17-b 审计） |
