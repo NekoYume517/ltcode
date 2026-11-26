@@ -139,7 +139,7 @@ test "LT-C: a body short by one byte reports a sane truncation, never a wrapped 
       assert_true(wanted > 0)
       assert_true(actual <= wanted)
       assert_true(
-        !error_text(TruncatedSymbolRecords(actual, wanted)).contains("-"),
+        !@src.error_text(TruncatedSymbolRecords(actual, wanted)).contains("-"),
       )
     }
     _ => abort("wrong variant for a short body")

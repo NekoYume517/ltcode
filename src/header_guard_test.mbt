@@ -340,7 +340,7 @@ test "LT3: the boundary values of c_q / delta_q still unpack" {
   let arr = packed.to_array()
   arr[5] = b'\x01' // c_q = 1     → c = 0.01
   arr[6] = b'\x64' // delta_q = 100 → δ = 1.00
-  let c = unpack_container(Bytes::from_array(arr)) catch {
+  let c = @src.unpack_container(Bytes::from_array(arr)) catch {
     e => abort("boundary rejected: \{error_text(e)}")
   }
   assert_true((c.c - 0.01).abs() < 0.000000000001)
