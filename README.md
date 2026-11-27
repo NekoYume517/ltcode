@@ -484,7 +484,7 @@ cmd/ltcode/
 
 ```bash
 moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链版本变化，不在此写死
-moon test             # 318 tests, all pass
+moon test             # 319 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 
@@ -497,7 +497,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 `preferred_target = "wasm"`。CI 取 CDN 的 `latest`，然后硬校验 `moon` 不低于
 `0.1.20261124`、`moonc` 不低于 `v1.0.0-rc1`：CDN 只发布 `latest`（带日期的版本 403），
 能钉住的是**语法级别**而不是某个字节版本，所以约束写成「不得更旧」。
-2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 318 个用例在
+2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 319 个用例在
 `wasm`、`wasm-gc`、`js` 三个后端全过，**没有需要改语法的断裂**，只改了一处 js 的 argv 起点。
 
 > **为什么这里不写警告数**：警告数不是本仓的不变量，而是「工具链版本 + lint 集」
@@ -507,7 +507,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 > 强制；警告数请自己跑一次 `moon check` 看当次值。`moon test` 的条数倒是源码树
 > 的不变量，所以上面那个数由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住（LT40）。
 
-测试分布（318 条，按 `^test "` 计数）：
+测试分布（319 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -530,6 +530,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 | `k_field_test.mbt` | 6 | 头部 K 字段域校验与独立文案 |
 | `overflow_guard_test.mbt` | 3 | 头部字段越界走分类错误而非 panic |
 | `verified_test.mbt` | 3 | 完好容器通过校验、篡改必 raise `CorruptionDetected` |
+| `peel_invariant_test.mbt` | 1 | 剥皮**全不变式**：不枚举输入而是枚举容器形态（精确重复 / 冲突 / 越界下标 / 多余方程 / 缺方程 / 全噪声），每一种都断言 `Complete ⟹ 载荷逐字节正确`、`Incomplete ⟹ 不落盘`、`Corruption ⟹ 哈希不符`（LT48，2026-11-27 审计） |
 | `symbol_test.mbt` | 3 | `reassemble` 逐字节还原、按 `payload_len` 截零、空输入不 panic |
 | `inconsistent_test.mbt` | 2 | `DecodeStats.inconsistent` 结构性恒 0 的护栏 |
 | `independent_sweep_test.mbt` | 3 | 130 组 encode/decode 对独立于 `decode_success_rate` 的往返扫描；只收 `symbols(60, 2k)` 的断点续收 + 重复下标（2026-11-23） |
@@ -592,6 +593,7 @@ API 契约见 [API.md](API.md)。
 ## License
 
 Apache-2.0，见 [LICENSE](LICENSE)。
+
 
 
 
