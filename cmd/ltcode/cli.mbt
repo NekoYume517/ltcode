@@ -749,11 +749,20 @@ pub fn container_bytes_bound_msg(count : Int32, symbol_len : Int32) -> String {
 }
 
 ///|
-/// `encode` 的**峰值工作集**守卫（LT30，2026-11-21 审计）。
+/// `encode` 的**峰值工作集**守卫（LT30，2026-11-21 审计；LT47 修公式）。
 ///
-/// 判据不是容器字节，而是同一次调用里同时活着的三块：
-/// `payload + 43 + count × (4 + symbol_len)`（全 Int64）。理由见
-/// `@lib.encode_peak_bytes`；这里只负责把它变成一句人话。
+/// 判据不是容器字节，而是同一次调用里同时活着的东西。**LT47 发现旧式子
+/// 只数了一份符号区**（实测峰值是它的 3.06 倍，闸门边界内 3134 MiB 对
+/// 声明 1024 MiB），现在是：
+///
+/// ```text
+///   payload  +  43  +  3 × count × (4 + symbol_len)
+///                     └─ Encoder::symbol 的 work
+///                          + Bytes::from_array 的副本
+///                          + pack_container 的 out
+/// ```
+///
+/// 理由见 `@lib.encode_peak_bytes`；这里只负责把它变成一句人话。
 ///
 /// 与其余 guard 同形状：空串 = 放行。
 pub fn encode_peak_bound_msg(
@@ -769,7 +778,7 @@ pub fn encode_peak_bound_msg(
     _ => LT_MAX_CONTAINER_BYTES + 1L
   }
   if peak > LT_MAX_CONTAINER_BYTES {
-    "--payload \{payload_len} with --count \{count} and symbol_len=\{symbol_len} needs \{peak} bytes of working set (payload + 43 + count x (4 + symbol_len)), above the limit of \{LT_MAX_CONTAINER_BYTES}; encode a smaller payload, lower --count, or raise --symbols so that each symbol is shorter"
+    "--payload \{payload_len} with --count \{count} and symbol_len=\{symbol_len} needs \{peak} bytes of working set (payload + 43 + 3 x count x (4 + symbol_len)), above the limit of \{LT_MAX_CONTAINER_BYTES}; encode a smaller payload, lower --count, or raise --symbols so that each symbol is shorter"
   } else {
     ""
   }

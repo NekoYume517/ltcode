@@ -484,7 +484,7 @@ cmd/ltcode/
 
 ```bash
 moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链版本变化，不在此写死
-moon test             # 315 tests, all pass
+moon test             # 318 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 
@@ -497,7 +497,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 `preferred_target = "wasm"`。CI 取 CDN 的 `latest`，然后硬校验 `moon` 不低于
 `0.1.20261124`、`moonc` 不低于 `v1.0.0-rc1`：CDN 只发布 `latest`（带日期的版本 403），
 能钉住的是**语法级别**而不是某个字节版本，所以约束写成「不得更旧」。
-2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 315 个用例在
+2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 318 个用例在
 `wasm`、`wasm-gc`、`js` 三个后端全过，**没有需要改语法的断裂**，只改了一处 js 的 argv 起点。
 
 > **为什么这里不写警告数**：警告数不是本仓的不变量，而是「工具链版本 + lint 集」
@@ -507,7 +507,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 > 强制；警告数请自己跑一次 `moon check` 看当次值。`moon test` 的条数倒是源码树
 > 的不变量，所以上面那个数由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住（LT40）。
 
-测试分布（315 条，按 `^test "` 计数）：
+测试分布（318 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -544,8 +544,9 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 | `metric_work_bytes_wbtest.mbt` | 4 | 工作预算的**字节轴**：`--symbol-len` 组合被拦、默认 sl 不误伤、上界±1、全部文档命令逐条代进（2026-11-17 审计） |
 | `container_bytes_bound_test.mbt` | 4 | `encode` 的完整容器文件上限 1 GiB（含 43 字节头）、精确边界、零符号容器与文档 encode 命令不误伤（LT27 复核） |
 | `metric_degree_axis_wbtest.mbt` | 4 | 字节轴补上平均度上界（91.0 s / 48.5 s 两档被拒）、默认 sl 与文档度量命令不误伤、6e9 边界 288/289（LT32，2026-11-21 审计） |
-| `encode_peak_budget_test.mbt` | 5 | `encode_peak_bytes` = payload + 43 + count×(4+sl)、两条实测爆点被拒、边界精确、负值/超 Int32 先拒（LT30，2026-11-21 审计） |
-| `encode_peak_bound_test.mbt` | 4 | CLI 侧同一条轴：`--count 0` 不再绕过、`--symbols 1 --count 2` 与 500 MiB 被拒、文档 encode 命令不误伤、边界双向（LT30，2026-11-21 审计） |
+| `encode_peak_budget_test.mbt` | 5 | `encode_peak_bytes` = payload + 43 + **3×**count×(4+sl)、两条实测爆点被拒、边界精确、负值/超 Int32 先拒（LT30，2026-11-21 审计；公式由 LT47 修正） |
+| `encode_peak_true_budget_test.mbt` | 3 | 峰值判据**实测校准**：旧式只数一份符号区、实测是它的 3.06 倍（闸门边界内 3134 MiB 对声明 1024 MiB）；新式数 work / Bytes 副本 / pack out 三份；边界仍精确；文档里的 encode 命令仍全放行（LT47，2026-11-27 审计） |
+| `encode_peak_bound_test.mbt` | 4 | CLI 侧同一条轴：`--count 0` 不再绕过、`--symbols 1 --count 2` 与 500 MiB 被拒、文档 encode 命令不误伤、边界双向（LT30，2026-11-21 审计；文案随 LT47 的 3 倍公式更新） |
 | `metric_points_guard_wbtest.mbt` | 3 | `curve --overheads` 点数 ≤ 64 与整条命令的总预算（符号轴 + 字节轴）（2026-11-17 审计） |
 | `metric_distcmp_factor_wbtest.mbt` | 2 | `distcmp` 的预算按实测 1.94× 保守乘 2，simulate/curve 边界不变（2026-11-17 审计） |
 | `param_image_test.mbt` | 4 | 参数越界报 `ParamOutOfImage`（不再借分布文案）、`try_new` 与 `new` 的钳位/拒绝矩阵、逐符号一致性（2026-11-17 审计） |
@@ -591,5 +592,6 @@ API 契约见 [API.md](API.md)。
 ## License
 
 Apache-2.0，见 [LICENSE](LICENSE)。
+
 
 

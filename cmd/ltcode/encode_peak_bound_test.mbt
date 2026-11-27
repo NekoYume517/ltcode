@@ -1,6 +1,6 @@
 ///|
-/// LT30（2026-11-21 审计）：`encode` 的预算轴必须是**峰值工作集**
-/// （`payload + 43 + count × (4 + symbol_len)`），不能只是容器字节。
+/// LT30（2026-11-21 审计）：`encode` 的预算轴必须是**峰值工作集**，
+/// 不能只是容器字节。
 ///
 /// 修复前 `encode` 只调 `container_bytes_bound_msg(count, symbol_len)`，
 /// 于是 `--count 0` 把这条轴钉死在 43 字节：`encode --count 0 --input
@@ -9,17 +9,19 @@
 /// `--symbols 1 --count 2` 加 500 MiB 输入：容器 1,048,576,051 字节
 /// 「合法」，峰值 4009.2 MiB。
 ///
+/// **LT47（2026-11-27）把公式改成了 3 倍**：旧式子
+/// `payload + 43 + count × (4 + symbol_len)` 只数了一份符号区，而
+/// `Encoder::symbol` 同时活着 `work: FixedArray[Byte]`、`Bytes::from_array`
+/// 的副本与 `pack_container` 的 `out`。实测比值 3.06–3.11。下面这些数字
+/// 随公式一起更新，**不是把闸门放宽到能过**，而是新公式下的精确值。
+///
 /// 这些断言只用标量跑：守卫的判据全在 Int64 算术里，不需要真造 GB 级输入。
-
-///|
-/// 1.1 GiB 输入 + `--count 0`：修复前 msg 为空（放行），现在必须拒，且
-/// 文案要点出三条轴（payload / count / symbol_len）和真实公式。
-test "LT30: --count 0 does not bypass the encode budget" {
+test "LT30/LT47: --count 0 does not bypass the encode budget" {
   // K=100 → symbol_len = ceil(1.1 GiB / 100)
   let msg = encode_peak_bound_msg(1_153_433_600, 0, 11_534_336)
   inspect(
     msg,
-    content="--payload 1153433600 with --count 0 and symbol_len=11534336 needs 1153433643 bytes of working set (payload + 43 + count x (4 + symbol_len)), above the limit of 1073741824; encode a smaller payload, lower --count, or raise --symbols so that each symbol is shorter",
+    content="--payload 1153433600 with --count 0 and symbol_len=11534336 needs 1153433643 bytes of working set (payload + 43 + 3 x count x (4 + symbol_len)), above the limit of 1073741824; encode a smaller payload, lower --count, or raise --symbols so that each symbol is shorter",
   )
   // 文档里那条 43 字节的 `--count 0`（4000 字节 payload）必须继续放行。
   inspect(encode_peak_bound_msg(4000, 0, 40), content="")
@@ -56,11 +58,15 @@ test "LT30: every documented encode command fits the peak budget" {
 
 ///|
 /// 边界双向：峰值**恰好** 1 GiB 放行，超 1 字节必拒。
-test "LT30: peak budget boundary is bidirectional" {
+///
+/// LT47 的公式是 `payload + 43 + 3 × count × (4 + symbol_len)`：
+/// `count=1, symbol_len=1` 时符号区占 `3 × 5 = 15`，所以
+/// `payload = limit - 43 - 15` 恰好命中上限。
+test "LT30/LT47: peak budget boundary is bidirectional" {
   let limit = 1_073_741_824L
-  // count=1、symbol_len=1 → 头部 43 + 5 = 48；payload = limit - 48。
-  assert_eq(@lib.encode_peak_bytes(limit - 48L, 1L, 1L), limit)
-  inspect(encode_peak_bound_msg((limit - 48L).to_int(), 1, 1), content="")
-  assert_eq(@lib.encode_peak_bytes(limit - 47L, 1L, 1L), limit + 1L)
-  assert_true(!encode_peak_bound_msg((limit - 47L).to_int(), 1, 1).is_empty())
+  let exact = limit - 43L - 15L
+  assert_eq(@lib.encode_peak_bytes(exact, 1L, 1L), limit)
+  inspect(encode_peak_bound_msg(exact.to_int(), 1, 1), content="")
+  assert_eq(@lib.encode_peak_bytes(exact + 1L, 1L, 1L), limit + 1L)
+  assert_true(!encode_peak_bound_msg((exact + 1L).to_int(), 1, 1).is_empty())
 }

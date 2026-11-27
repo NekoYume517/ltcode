@@ -62,24 +62,53 @@ pub fn check_container_budget(
 }
 
 ///|
-/// `encode` / `pack_container` 一次调用的**峰值工作集**：`payload + 43 +
-/// count × (4 + symbol_len)`（全 Int64）。
+/// `encode` / `pack_container` 一次调用的**峰值工作集**。
 ///
 /// LT30（2026-11-21 审计）：容器字节不是峰值。同一次调用里同时活着
 /// payload（输入文件）、每个符号的 body（`Encoder::symbols` 的产物）与最终
 /// 容器（`pack_container` 的 `out`），于是实测 `--symbols 1 --count 2`
 /// 加 500 MiB 输入给出**合法**容器 1,048,576,051 字节、峰值 4009.2 MiB。
 ///
+/// LT47（2026-11-27 审计）：上面那句话是对的，但**公式没有兑现它**。
+/// 旧式子是 `payload + 43 + count × (4 + symbol_len)` —— 只数了**一份**
+/// 符号区。实测（PSAPI `GetProcessMemoryInfo`，native release）：
+///
+/// ```text
+///   --symbols 1 --count   10000   peak  125.7 MiB   旧声明  38.2 MiB   3.29x
+///   --symbols 1 --count   40000   peak  475.6 MiB   旧声明 152.7 MiB   3.11x
+///   --symbols 1 --count  100000   peak 1174.7 MiB   旧声明 381.9 MiB   3.08x
+///   --symbols 1 --count  268137   peak 3134.0 MiB   旧声明 1023.9 MiB  3.06x
+/// ```
+///
+/// 最后一行是**闸门边界内**的最大取值：闸门放行了它，真实峰值 3134 MiB，
+/// 是 `MAX_CONTAINER_BYTES`（1 GiB）的 2.9 倍。**闸门不是堵住了大分配，
+/// 而是把可分配量放大了 3 倍。**
+///
+/// 3 倍的来源是 `Encoder::symbol` 的两块分配：
+/// `work: FixedArray[Byte]`（XOR 工作区）与 `Bytes::from_array(work)`
+/// （出参，**又拷一份**），再加 `pack_container` 的 `out` 一份：
+///
+/// ```text
+///   payload  +  count × (4 + symbol_len)   ← work（每符号一次）
+///            +  count × (4 + symbol_len)   ← Bytes 出参
+///            +  count × (4 + symbol_len)   ← pack_container 的 out
+/// ```
+///
+/// 小 `count`（10000 以下）比值更高（3.29x），那是进程基线（约 9 MiB）
+/// 被摊薄的效果，不是常数变大；判据只认 3 倍，不去追这个尾巴。
+///
 /// 三个量都是 Int64：`count`/`symbol_len` 先被 `container_body_bytes`
-/// 约束到非负 Int32 域，乘积 ≤ `(2^31-1)×(2^31+3)`，加 `payload`
-/// （≤ `2^31-1`）仍远小于 Int64 上限，不会先回绕再检查。
+/// 约束到非负 Int32 域，乘积 ≤ `(2^31-1)×(2^31+3)`，乘以 3 后仍远小于
+/// Int64 上限（约 9.2e18），加 `payload`（≤ `2^31-1`）不会先回绕再检查。
 pub fn encode_peak_bytes(
   payload_len : Int64,
   count : Int64,
   symbol_len : Int64,
 ) -> Int64 raise LtError {
   check_nonnegative_int32("payload_len", payload_len, 0L)
-  payload_len + container_file_bytes(count, symbol_len)
+  payload_len +
+  CONTAINER_HEADER_BYTES +
+  3L * container_body_bytes(count, symbol_len)
 }
 
 ///|
