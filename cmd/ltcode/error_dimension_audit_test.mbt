@@ -33,11 +33,48 @@
 /// 的翻版。这里用一个 `Array[LtError]` 穷举 + 循环，新增变体只需在那个数组里
 /// 加一条，甚至只需在 `lt43_all_variants()` 里加一条构造。
 ///
-/// ## 已知豁免
+/// ## 已知豁免（逐条写明理由，免得下一个人重推）
+///
+/// 判据是「**数字表述一个带量纲的量时**，才要求标注单位或主语」。不属于
+/// 「带量纲的量」的数字，豁免成立。三条豁免各写清**豁免的到底是什么**：
+///
+/// ### 1. `UnsupportedVersion(found, supported)` —— 版本号无量纲
+///
+/// 渲染 `unsupported container version {f}, this build supports {s}`。
+/// `f` 与 `s` 是**版本号**，没有物理量纲可言（"3 版本"不是一个可度量的量），
+/// 且两者各自紧跟主语词（`version` / `supports`）。
+///
+/// ⚠️ **豁免的是「本渲染形态」，不是这个变体永久豁免。** `f` 与 `s` 是**两根
+/// 不同的轴**（文件声明 vs 本构建支持）。若哪天有人把文案改成
+/// `got 2, expected 3` 这种并排形式，就又是「两个数并排而无主语」——
+/// 与 LT42 修掉的 `got 3 bytes, expected 4` 同型，本条锁会立刻红。
+/// 换句话说：**改这句文案时不要以为这里已经开过豁免**。
+///
+/// ### 2. `InvalidHeaderField(name, value, low, high)` —— 边界是参数域端点
+///
+/// 渲染 `invalid container header: {name}={value} exceeds the maximum {high}`。
+/// `name=` 已把量纲交代清楚（`K` / `symbol_len` / `count` 都是无量纲的计数
+/// 或索引），`{low}` / `{high}` 是该参数的**取值域端点**，与 `{value}` 同轴同
+/// 量纲。再要求「端点也带单位」等于要求 `K` 后面写"个"，纯噪音。
+///
+/// ⚠️ 同样只豁免**当前形态**。若改成 `value 5 is out of [1, 8)` 之外的
+/// 并排数字形式（如 `got 5, ok 1..8`），需要重新审视。
+///
+/// ### 3. `ParamOutOfImage(name, value, low, high)` —— 同上，取值域端点
+///
+/// 渲染 `{name}={value} is outside the permitted image [{low}, {high})`。
+/// `c` / `delta` 是无量纲比率，区间端点是**域**而不是可度量的量。
+/// `[` 与 `,` 本身就是"区间端点"的记号（判据里认这两个左邻）。
+///
+/// ⚠️ 仅豁免当前形态。
+///
+/// ### 附：`InvalidDegree` 的语义错位（已修，不是豁免）
 ///
 /// `InvalidDegree(k, k)` 在 `K < 1` 时把 **K** 塞进了 `d` 的位置
-/// （`distribution.mbt` 的 `robust_soliton_checked`）。这是**语义错位**不是
-/// 量纲错位，已在 LT43 单独修掉；本条锁只关心"数字有没有主语/单位"。
+/// （`distribution.mbt` 的 `robust_soliton_checked`）。这是**语义错位**、
+/// 不是量纲错位：度数根本没被检查过，用户却在"度数"字段上看到自己的 0。
+/// LT43 已把它改报 `EmptySource`（与兄弟入口 `robust_distribution` 对齐）。
+/// 本条锁只关心"数字有没有主语/单位"，那种错位要靠调用点审查。
 
 ///|
 /// 把渲染文本切成"纯数字 token"与其它 token，返回**裸数字**（前后都没有
@@ -56,10 +93,13 @@ fn lt43_bare_numbers(text : String) -> Array[String] {
     "version", "supports", "consumed", "expected", "got",
   ]
   // 判据不是"数字旁边必须有词"，而是"**这个数字表述一个带量纲的量时，
-  // 必须让读者知道是什么量**"。以下四类不表述带量纲的量，豁免：
+  // 必须让读者知道是什么量**"。以下四类不表述带量纲的量，豁免
+  // （每条豁免的完整理由与**边界条件**见文件头「已知豁免」，改文案前必读）：
   //   · 版本号（`version 3` / `supports 2`）—— 无量纲，且已紧跟主语词；
+  //     ⚠️ 只豁免本形态：`f` 与 `s` 是不同轴，改成 `got 2, expected 3` 会红。
   //   · 度数下界（`1 <= d <= K` 里的 `1`）—— 右侧词是 `d` 或 `K`；
   //   · 区间端点（`[0.005, 2.555)`）—— 左邻是 `[` 或 `,`；
+  //     ⚠️ `InvalidHeaderField` / `ParamOutOfImage` 的端点只豁免本形态。
   //   · 公式常量（`round(c*100)` 里的 `100`）—— 左邻是 `*`。
   let chars = text.to_array()
   let n = chars.length()
