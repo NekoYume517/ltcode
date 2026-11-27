@@ -38,6 +38,8 @@ pub fn default_count_overflow_msg(Int32) -> String
 
 pub fn degree_factor_bound(Int32) -> Int32
 
+pub fn duplicate_arg_error(Args) -> String
+
 pub fn encode_note(Int32) -> String
 
 pub fn encode_peak_bound_msg(Int32, Int32, Int32) -> String

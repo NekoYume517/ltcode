@@ -484,7 +484,7 @@ cmd/ltcode/
 
 ```bash
 moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链版本变化，不在此写死
-moon test             # 306 tests, all pass
+moon test             # 315 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
 
@@ -497,7 +497,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 `preferred_target = "wasm"`。CI 取 CDN 的 `latest`，然后硬校验 `moon` 不低于
 `0.1.20261124`、`moonc` 不低于 `v1.0.0-rc1`：CDN 只发布 `latest`（带日期的版本 403），
 能钉住的是**语法级别**而不是某个字节版本，所以约束写成「不得更旧」。
-2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 306 个用例在
+2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 315 个用例在
 `wasm`、`wasm-gc`、`js` 三个后端全过，**没有需要改语法的断裂**，只改了一处 js 的 argv 起点。
 
 > **为什么这里不写警告数**：警告数不是本仓的不变量，而是「工具链版本 + lint 集」
@@ -507,7 +507,7 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 > 强制；警告数请自己跑一次 `moon check` 看当次值。`moon test` 的条数倒是源码树
 > 的不变量，所以上面那个数由 `cmd/ltcode/doc_count_lock_test.mbt` 锁住（LT40）。
 
-测试分布（306 条，按 `^test "` 计数）：
+测试分布（315 条，按 `^test "` 计数）：
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
@@ -557,11 +557,13 @@ moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 
 | `trial_independence_test.mbt` | 3 | 「试验之间必须独立」的回归锁：逐次重算、块间标准差落在二项区间、相邻种子的符号子集不重合（LT36，2026-11-24 审计） |
 | `missing_preview_wbtest.mbt` | 4 | `decode` 的缺失下标诊断行有界：在 64 项处截断并如实计数、总长不随 K 增长（LT35，2026-11-26 审计） |
 | `out_path_empty_test.mbt` | 4 | `--out ""` 报用法错误、不静默回退默认名、不覆盖哨兵文件（LT38，2026-11-26 审计） |
+| `duplicate_arg_test.mbt` | 5 | 重复 `--key` 报用法错误并点名键与出现次数；值相同也算重复；`=` 形式与分离形式混用同样算；不重复时放行（LT46，2026-11-27 审计） |
 | `doc_count_lock_test.mbt` | 5 | 本文档自身：声称的测试总数 == 源码树真实条数、表格各行之和 == 总数、每个测试文件都有一行、DEMO §3 转录与真实输出一致、§1 与 README 计数一致（LT39，2026-11-27 审计） |
 | `doc_warning_lock_test.mbt` | 3 | 本文档自身：README / DEMO §1 / DEMO 正文都不得再把**精确警告数**写成事实；年表的历史实测值豁免（LT40，2026-11-28 审计） |
 | `malformed_header_test.mbt` | 7 | 恶意声明头**主动构造**矩阵：字段互相矛盾、`count_max` 整除边界、符号体短一字节、尾部多一字节、体积超限在分配前拒、K=max 单符号（LT41，2026-11-28 审计） |
-| `decode_complexity_test.mbt` | 3 | 解码复杂度**线性**的零噪声判据：`count` 翻倍时 `subset_slots`/`xor_bytes` 只约翻倍（区间 [1.5,2.4]，排除平方）、`symbol_len` 翻倍时 `xor_bytes` 翻倍（字节量纲）、`K=1` 时 `subset_slots` 精确等于 Σ\|subset\|（LT44，2026-11-29 审计） |`n| `decode_cost_shape_test.mbt` | 3 | 代价**形状**：`subset_slots` 随 K 单调增（CSR 建表成本）、`xor_bytes` 只随剥皮推进而涨（推不动就塌）、四个计数器跨调用逐值确定（LT44，2026-11-29 审计） |
+| `decode_complexity_test.mbt` | 3 | 解码复杂度**线性**的零噪声判据：`count` 翻倍时 `subset_slots`/`xor_bytes` 只约翻倍（区间 [1.5,2.4]，排除平方）、`symbol_len` 翻倍时 `xor_bytes` 翻倍（字节量纲）、`K=1` 时 `subset_slots` 精确等于 Σ\|subset\|（LT44，2026-11-29 审计） |
 | `decode_cost_shape_test.mbt` | 3 | 代价**形状**：`subset_slots` 随 K 单调增（CSR 建表成本）、`xor_bytes` 只随剥皮推进而涨（推不动就塌）、四个计数器跨调用逐值确定（LT44，2026-11-29 审计） |
+| `subset_slots_large_k_test.mbt` | 4 | 31.8 遗留的边界：`subset_slots` 的单调性跑到 `K=1e6`（`n=4000` 固定）、理论 `E[d]` 单调到 1e6、重尾导致实测 per-symbol 度数高于 `E[d]` 22%（上界 1.5 倍）、`expected_degree` 在 `K=65536/1024/2` 上点名精确值（LT45，2026-11-27 审计） |
 | `error_dimension_audit_test.mbt` | 3 | 遍历**全部 15 个**错误变体的渲染，断言每个数字都带单位或主语（裸数字为空）；变体清单与 `lt_error_variant_count()` 对账；比较类渲染单位必须贴数字（LT43，2026-11-29 审计） |
 | `truncated_symbol_unit_test.mbt` | 4 | 截断错误文案的**量纲**：符号条数分支点名 `symbol(s)` 而字节分支仍说 `bytes`、两个分支文案必须不同、`got {n} of {m}` 数值锚点（LT42，2026-11-28 审计） |
 | `payload_len_zero_test.mbt` | 2 | `payload_len=0` 的伪造容器必须报错（LT21）、零符号容器与非零载荷不受影响（2026-11-17 审计） |
@@ -589,4 +591,5 @@ API 契约见 [API.md](API.md)。
 ## License
 
 Apache-2.0，见 [LICENSE](LICENSE)。
+
 

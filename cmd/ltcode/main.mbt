@@ -192,6 +192,54 @@ pub fn unknown_arg_error(args : Args, cmd : String) -> String {
 }
 
 ///|
+/// 重复 `--key` 的裁决（LT46，2026-11-27 审计）。
+///
+/// ## 现象（修复前）
+///
+/// `parse_args` 对同一个键第二次出现时执行 `map[key] = value`，**无条件
+/// 覆盖**，`order` 里则记下两次。于是这两条命令都 exit 0：
+///
+/// ```text
+/// $ ltcode decode --input good.ltc --out a.bin --out b.bin
+/// decoded OK: ... (checksum verified)
+/// out: b.bin            ← a.bin 一个字节都没出现
+///
+/// $ ltcode encode --input in.bin --symbols 10 --symbols 10 --out o.ltc
+/// encoded ...           ← 值相同，所以连"冲突"都察觉不到
+/// ```
+///
+/// `--symbols` 的重复之所以曾经被抓住，是因为它**恰好**可被容器的 K 交叉
+/// 核对（`does not match container K=100`）。`--out` / `--input` /
+/// `--overheads` 没有任何可核对的参照物，所以必须在这一层拒绝。这与
+/// LT-F（未知 `--flag` 静默接受）、LT38（`--out ""` 回退默认名）是同族：
+/// **命令行上写了什么，要么全部生效，要么明确报错**。
+///
+/// ## 为什么不按值去重
+///
+/// 按值去重会放行 `--out a.bin --out a.bin`。那只是把同一个歧义藏得更深：
+/// 用户仍然写了两次，而我们仍然只执行了一次 —— 他无法从退出码判断哪次
+/// 生效。判据是**出现次数**，不是值的集合。
+///
+/// 首个重复键按 argv 顺序报（与 `unknown_arg_error` 同口径：一次只说一件事）。
+pub fn duplicate_arg_error(args : Args) -> String {
+  let counts : Map[String, Int32] = Map([])
+  let mut i = 0
+  while i < args.order.length() {
+    let key = args.order[i]
+    let n = match counts.get(key) {
+      None => 1
+      Some(v) => v + 1
+    }
+    if n == 2 {
+      return "--\{key} was given 2 times on the command line; specify it once (only the last value would take effect, so the others would be silently ignored)"
+    }
+    counts[key] = n
+    i = i + 1
+  }
+  ""
+}
+
+///|
 /// 字符串参数：**空值等于没给**（LT31，2026-11-21 审计）。
 ///
 /// `--out` 写在末尾、或后面紧跟另一个 `--flag` 时，值只能是空串，而空串
@@ -488,6 +536,22 @@ fn main {
   }
   let cmd = argv[1]
   let args = parse_args(argv)
+  // LT46（2026-11-27 审计）：重复 `--key` 在这里一次性拒绝。
+  //
+  // 放在子命令分发**之前**而不是各子命令内部，有两个理由：
+  // 1. 每个子命令都要过这一关，抄五遍就会有一遍漏掉；
+  // 2. 它与 `unknown_arg_error` 是同一类「命令行本身有歧义」的缺陷，
+  //    应该在同一个层次裁决。
+  //
+  // 顺序上先报重复、再报未知键：重复的键若恰好也是未知键，用户先要解决的
+  // 是"我写了两次"这件事（它决定这一行命令到底想干什么）。`help` 也走
+  // 这一关 —— `ltcode help --out a --out b` 里的重复同样是歧义。
+  let dup = duplicate_arg_error(args)
+  if !dup.is_empty() {
+    arg_error(dup)
+    exit_usage()
+    return
+  }
   match cmd {
     "encode" => cmd_encode(args)
     "decode" => cmd_decode(args)
