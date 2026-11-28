@@ -123,7 +123,7 @@ overhead  robust      ideal      fixed(5)
 
 ## 用法
 
-**作为库依赖**（已发布到 [mooncakes.io](https://mooncakes.io/docs/NekoYume517/ltcode)，当前版本 `0.1.0`）：
+**作为库依赖**（已发布到 [mooncakes.io](https://mooncakes.io/docs/NekoYume517/ltcode)，当前版本 `0.1.1`）：
 
 ```bash
 moon add NekoYume517/ltcode
