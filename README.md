@@ -123,6 +123,14 @@ overhead  robust      ideal      fixed(5)
 
 ## 用法
 
+**作为库依赖**（已发布到 [mooncakes.io](https://mooncakes.io/docs/NekoYume517/ltcode)，当前版本 `0.1.0`）：
+
+```bash
+moon add NekoYume517/ltcode
+```
+
+**在仓库内跑命令行**：
+
 ```bash
 # 编码：把文件切成 K=100 段，生成 300 个编码符号
 moon run cmd/ltcode -- encode --input examples/payload.bin \
