@@ -454,8 +454,33 @@ fn arg_error(msg : String) -> Unit {
 }
 
 ///|
+/// `@env.args()` 前面有几个元素不属于本程序。
+///
+/// `@env.args()` 是**整个进程**的命令行。js 后端把解释器也算进去：`node` 是
+/// `argv[0]`、编译产物的路径是 `argv[1]`，而这里把 `argv[1]` 当子命令，于是 js 上
+/// `ltcode curve ...` 的子命令被读成那个 `.js` 路径 —— 实测（`moonc v1.0.0-rc1`）
+/// 同一个 `help` 在 wasm/wasm-gc 上 2 个元素、在 js 上 3 个。0.1.20261117 上一样，
+/// 所以这是 js 构建的性质，不是 1.0 引入的。
+///
+/// 把「程序自身」重新放回 index 0 再交下去，`parse_args` 收到的形状与 wasm 相同，
+/// 只是 js 上丢掉了 `node`。
+///
+/// 两条 `#cfg` 声明：`#cfg` 只能挂在声明上，挂在语句上不通过解析。
+#cfg(not(target="js"))
+let argv_prefix : Int32 = 1
+
+///|
+#cfg(target="js")
+let argv_prefix : Int32 = 2
+
+///|
 fn main {
-  let argv = @env.args()
+  let all = @env.args()
+  let argv : Array[String] = Array::new(capacity=all.length())
+  // index 0 放「程序自身」：wasm/wasm-gc 取 `all[0]`，js 取 `all[1]`（`all[0]` 是 node）。
+  for i = argv_prefix - 1; i < all.length(); i = i + 1 {
+    argv.push(all[i])
+  }
   if argv.length() < 2 {
     println(usage())
     exit_usage()

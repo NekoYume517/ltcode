@@ -6,7 +6,7 @@
 就能还原原始数据。丢掉哪些不重要，补发多少由丢包率决定 —— 这就是
 "无速率"（rateless）的含义。
 
-[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261102-blueviolet)](https://www.moonbitlang.com/)
+[![MoonBit](https://img.shields.io/badge/MoonBit-1.0.0--rc1*-blueviolet)](https://www.moonbitlang.com/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ---
@@ -487,7 +487,18 @@ moon check            # 见 CI：0 errors 是硬门槛，警告数随工具链�
 moon test             # 306 tests, all pass
 moon fmt --check      # clean
 moon build --target wasm
+
+# js 后端（CI 会跑；编码/解码逻辑不依赖 wasm）
+moon test --release --target js
+moon run --target js cmd/ltcode -- curve --symbols 1000 --overheads 1.0,1.2,1.5 --trials 500 --seed 1
 ```
+
+**工具链：MoonBit 1.0（`moon 0.1.20261126` / `moonc v1.0.0-rc1`）**，`moon.mod` 里
+`preferred_target = "wasm"`。CI 取 CDN 的 `latest`，然后硬校验 `moon` 不低于
+`0.1.20261124`、`moonc` 不低于 `v1.0.0-rc1`：CDN 只发布 `latest`（带日期的版本 403），
+能钉住的是**语法级别**而不是某个字节版本，所以约束写成「不得更旧」。
+2026-11-30 的工具链 1.0 迁移实测记录见 `../HANDOVER.md` 第三十二节；本仓 306 个用例在
+`wasm`、`wasm-gc`、`js` 三个后端全过，**没有需要改语法的断裂**，只改了一处 js 的 argv 起点。
 
 > **为什么这里不写警告数**：警告数不是本仓的不变量，而是「工具链版本 + lint 集」
 > 的因变量 —— 同一个 commit 换一版 `moonc`，数字就变（历史上漂过 721 → 759 →
@@ -578,3 +589,4 @@ API 契约见 [API.md](API.md)。
 ## License
 
 Apache-2.0，见 [LICENSE](LICENSE)。
+
